@@ -18,8 +18,9 @@ function formatDate(dateStr) {
  * 미디어 영역 우선순위:
  *   1) COMPLETED + 사진 있음 → 직접 찍은 사진 캐러셀
  *   2) 그 외 → reference_platform에 맞는 임베드 (없으면 플레이스홀더)
+ * 편집 모드(editable)에서는 상태 전환 / 수정 / 삭제 버튼이 표시된다.
  */
-export default function ContentCard({ content }) {
+export default function ContentCard({ content, editable = false, onEdit, onDelete, onToggleStatus }) {
   const { title, status, date, reference_url, reference_platform, photo_urls, category, memo } = content
 
   const isCompleted = status === 'COMPLETED'
@@ -27,7 +28,41 @@ export default function ContentCard({ content }) {
   const platform = PLATFORM_LABEL[reference_platform]
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-neutral-900/5 transition-shadow hover:shadow-md">
+    <article
+      className={`relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 transition-shadow hover:shadow-md ${
+        editable ? 'ring-2 ring-rose-200' : 'ring-neutral-900/5'
+      }`}
+    >
+      {/* 편집 모드 액션 버튼 */}
+      {editable && (
+        <div className="absolute left-2 top-2 z-10 flex gap-1.5">
+          <button
+            type="button"
+            onClick={onToggleStatus}
+            title={isCompleted ? '할 것으로 되돌리기' : '완료로 표시하기'}
+            className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-neutral-700 shadow backdrop-blur transition-colors hover:bg-white"
+          >
+            {isCompleted ? '↩️ 되돌리기' : '✅ 완료!'}
+          </button>
+          <button
+            type="button"
+            onClick={onEdit}
+            title="수정"
+            className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-neutral-700 shadow backdrop-blur transition-colors hover:bg-white"
+          >
+            ✏️ 수정
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            title="삭제"
+            className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-red-500 shadow backdrop-blur transition-colors hover:bg-red-50"
+          >
+            🗑️
+          </button>
+        </div>
+      )}
+
       {/* 미디어 영역 */}
       {showPhotos ? (
         <PhotoCarousel photos={photo_urls} title={title} />

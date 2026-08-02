@@ -1,6 +1,16 @@
 import Dashboard from './components/Dashboard.jsx'
-import { MOCK_CONTENTS } from './data/mockContents.js'
+import { useContents } from './hooks/useContents.js'
 
 export default function App() {
-  return <Dashboard contents={MOCK_CONTENTS} />
+  const { contents, addContent, updateContent, removeContent, toggleStatus } = useContents()
+
+  return (
+    <Dashboard
+      contents={contents}
+      onAdd={addContent}
+      onUpdate={updateContent}
+      onRemove={removeContent}
+      onToggleStatus={toggleStatus}
+    />
+  )
 }

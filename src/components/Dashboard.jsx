@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import ContentCard from './ContentCard.jsx'
+import ContentFormModal from './ContentFormModal.jsx'
 
 const TABS = [
   { key: 'PLANNING', label: '할 것들', emoji: '🗓️' },
@@ -8,11 +9,15 @@ const TABS = [
 
 /**
  * 메인 대시보드.
- * 상단 탭으로 PLANNING / COMPLETED를 전환하고,
- * 선택된 상태의 컨텐츠를 반응형 카드 그리드로 보여준다.
+ * - 상단 탭으로 PLANNING / COMPLETED 전환
+ * - 편집 모드 토글: 카드마다 상태 전환/수정/삭제 버튼 + 새 컨텐츠 추가 버튼 노출
+ * - 추가/수정은 ContentFormModal에서 처리
  */
-export default function Dashboard({ contents }) {
+export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggleStatus }) {
   const [activeTab, setActiveTab] = useState('PLANNING')
+  const [editMode, setEditMode] = useState(false)
+  // modal: null(닫힘) | { mode: 'add' } | { mode: 'edit', content }
+  const [modal, setModal] = useState(null)
 
   const filtered = useMemo(() => {
     const list = contents.filter((c) => c.status === activeTab)
@@ -31,14 +36,45 @@ export default function Dashboard({ contents }) {
     [contents],
   )
 
+  const handleSave = (data) => {
+    if (modal?.mode === 'edit') {
+      onUpdate(modal.content.id, data)
+    } else {
+      onAdd(data)
+      // 추가한 컨텐츠가 바로 보이도록 해당 상태 탭으로 이동
+      setActiveTab(data.status)
+    }
+    setModal(null)
+  }
+
+  const handleDelete = (content) => {
+    if (window.confirm(`'${content.title}' 컨텐츠를 삭제할까요?`)) {
+      onRemove(content.id)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
       {/* 헤더 */}
-      <header className="mb-8 text-center">
+      <header className="relative mb-8 text-center">
         <h1 className="text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">
           혜진 <span className="text-rose-400">♥</span> 정우 컨텐츠 보드
         </h1>
         <p className="mt-2 text-sm text-neutral-500">우리 둘의 하고 싶은 것, 해낸 것들을 한곳에</p>
+
+        {/* 편집 모드 토글 */}
+        <button
+          type="button"
+          onClick={() => setEditMode((prev) => !prev)}
+          aria-pressed={editMode}
+          className={`absolute right-0 top-0 rounded-full px-3.5 py-1.5 text-xs font-medium shadow-sm ring-1 transition-colors ${
+            editMode
+              ? 'bg-rose-400 text-white ring-rose-400 hover:bg-rose-500'
+              : 'bg-white text-neutral-600 ring-neutral-900/10 hover:bg-neutral-50'
+          }`}
+        >
+          {editMode ? '✔️ 편집 완료' : '✏️ 편집'}
+        </button>
       </header>
 
       {/* 탭 */}
@@ -71,10 +107,29 @@ export default function Dashboard({ contents }) {
       </nav>
 
       {/* 카드 그리드 */}
-      {filtered.length > 0 ? (
+      {filtered.length > 0 || editMode ? (
         <main className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {/* 편집 모드일 때 맨 앞에 추가 카드 */}
+          {editMode && (
+            <button
+              type="button"
+              onClick={() => setModal({ mode: 'add' })}
+              className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-rose-200 bg-white/60 text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50"
+            >
+              <span className="text-4xl">＋</span>
+              <span className="text-sm font-medium">새 컨텐츠 추가</span>
+            </button>
+          )}
+
           {filtered.map((content) => (
-            <ContentCard key={content.id} content={content} />
+            <ContentCard
+              key={content.id}
+              content={content}
+              editable={editMode}
+              onEdit={() => setModal({ mode: 'edit', content })}
+              onDelete={() => handleDelete(content)}
+              onToggleStatus={() => onToggleStatus(content.id)}
+            />
           ))}
         </main>
       ) : (
@@ -85,7 +140,26 @@ export default function Dashboard({ contents }) {
               ? '아직 계획한 컨텐츠가 없어요. 릴스 보다가 꽂힌 거 바로 추가해 보세요!'
               : '완료한 컨텐츠가 없어요. 첫 번째 추억을 만들러 가볼까요?'}
           </p>
+          <button
+            type="button"
+            onClick={() => {
+              setEditMode(true)
+              setModal({ mode: 'add' })
+            }}
+            className="mt-2 rounded-full bg-rose-400 px-5 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-rose-500"
+          >
+            ＋ 컨텐츠 추가하기
+          </button>
         </div>
+      )}
+
+      {/* 추가/수정 모달 */}
+      {modal && (
+        <ContentFormModal
+          initial={modal.mode === 'edit' ? modal.content : null}
+          onSave={handleSave}
+          onClose={() => setModal(null)}
+        />
       )}
     </div>
   )
