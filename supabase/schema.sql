@@ -47,21 +47,22 @@ create table public.custom_categories (
 
 -- ─────────────────────────────────────────────
 -- 3. RLS (행 수준 보안)
---    로그인한 사용자(두 사람의 계정)만 읽고 쓸 수 있게 한다.
---    Authentication → Sign In / Providers 에서 이메일 가입을 끄거나
---    두 계정만 만들어 두면 외부인은 접근할 수 없다.
+--    로그인 없이 쓰는 보드라 anon(익명) 접근을 허용한다.
+--    → 사이트 주소를 아는 사람은 누구나 읽고 쓸 수 있다는 뜻.
+--    나중에 로그인을 붙이고 싶으면 아래 정책의 'anon'을 지우고
+--    'authenticated'만 남기면 된다.
 -- ─────────────────────────────────────────────
 alter table public.contents enable row level security;
 alter table public.custom_categories enable row level security;
 
-create policy "authenticated can do everything on contents"
+create policy "anyone can do everything on contents"
   on public.contents for all
-  to authenticated
+  to anon, authenticated
   using (true) with check (true);
 
-create policy "authenticated can do everything on custom_categories"
+create policy "anyone can do everything on custom_categories"
   on public.custom_categories for all
-  to authenticated
+  to anon, authenticated
   using (true) with check (true);
 
 -- ─────────────────────────────────────────────
@@ -76,19 +77,19 @@ alter publication supabase_realtime add table public.custom_categories;
 -- ─────────────────────────────────────────────
 insert into storage.buckets (id, name, public) values ('photos', 'photos', true);
 
-create policy "authenticated can upload photos"
+create policy "anyone can upload photos"
   on storage.objects for insert
-  to authenticated
+  to anon, authenticated
   with check (bucket_id = 'photos');
 
-create policy "authenticated can update photos"
+create policy "anyone can update photos"
   on storage.objects for update
-  to authenticated
+  to anon, authenticated
   using (bucket_id = 'photos');
 
-create policy "authenticated can delete photos"
+create policy "anyone can delete photos"
   on storage.objects for delete
-  to authenticated
+  to anon, authenticated
   using (bucket_id = 'photos');
 
 create policy "anyone can view photos"
