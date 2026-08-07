@@ -57,7 +57,7 @@ function EditActions({ isCompleted, onToggleStatus, onEdit, onDelete }) {
  * 편집 모드(editable)에서는 상태 전환 / 수정 / 삭제 버튼이 표시된다.
  */
 export default function ContentCard({ content, editable = false, onEdit, onDelete, onToggleStatus }) {
-  const { title, status, date, reference_url, reference_platform, photo_urls, category, memo } = content
+  const { title, status, date, reference_url, reference_platform, photo_urls, categories, memo } = content
 
   const isCompleted = status === 'COMPLETED'
   const showPhotos = isCompleted && photo_urls.length > 0
@@ -104,7 +104,7 @@ export default function ContentCard({ content, editable = false, onEdit, onDelet
 
       {/* 본문 영역 */}
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {compact && <span className="text-base leading-none">💌</span>}
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -113,9 +113,14 @@ export default function ContentCard({ content, editable = false, onEdit, onDelet
           >
             {isCompleted ? '✅ 한 것' : '🗓️ 할 것'}
           </span>
-          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-600">
-            {category}
-          </span>
+          {(categories ?? []).map((c) => (
+            <span
+              key={c}
+              className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-600"
+            >
+              {c}
+            </span>
+          ))}
         </div>
 
         <h3 className="text-base font-semibold leading-snug text-neutral-900">{title}</h3>

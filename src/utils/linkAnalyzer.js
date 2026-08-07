@@ -23,7 +23,7 @@ export function extractSnsUrl(text) {
   return detectPlatform(url) === 'NONE' ? null : url
 }
 
-// 제목/작성자 텍스트에서 카테고리를 추측하는 키워드 규칙 (위에서부터 우선)
+// 제목/작성자 텍스트에서 카테고리를 추측하는 키워드 규칙 (복수 매칭 허용)
 const CATEGORY_RULES = [
   ['맛집', /맛집|먹방|카페|디저트|빵집|브런치|레스토랑|food|cafe|restaurant|dessert/i],
   ['홈데이트', /레시피|요리|베이킹|홈카페|만들기|recipe|baking|cooking|diy/i],
@@ -31,9 +31,8 @@ const CATEGORY_RULES = [
   ['액티비티', /운동|클라이밍|등산|자전거|피크닉|원데이|클래스|서핑|workout|hiking/i],
 ]
 
-function guessCategory(text) {
-  const rule = CATEGORY_RULES.find(([, regex]) => regex.test(text))
-  return rule ? rule[0] : ''
+function guessCategories(text) {
+  return CATEGORY_RULES.filter(([, regex]) => regex.test(text)).map(([name]) => name)
 }
 
 const OEMBED_ENDPOINT = {
@@ -82,7 +81,7 @@ export async function analyzeLink(url) {
     reference_url: url,
     reference_platform: platform,
     photo_urls: [],
-    category: guessCategory(`${title} ${author ?? ''}`),
+    categories: guessCategories(`${title} ${author ?? ''}`),
     memo: author ? `${author} 게시물 보고 저장했어요 ✨` : '',
   }
 }

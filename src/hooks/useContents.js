@@ -3,10 +3,17 @@ import { MOCK_CONTENTS } from '../data/mockContents.js'
 
 const STORAGE_KEY = 'couple-contents-board:v1'
 
+// 예전 스키마(category: String)를 새 스키마(categories: String[])로 변환
+function migrate(item) {
+  if (Array.isArray(item.categories)) return item
+  const { category, ...rest } = item
+  return { ...rest, categories: category ? [category] : [] }
+}
+
 function loadInitial() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) return JSON.parse(saved)
+    if (saved) return JSON.parse(saved).map(migrate)
   } catch {
     // 저장된 데이터가 깨져 있으면 Mock 데이터로 초기화
   }
