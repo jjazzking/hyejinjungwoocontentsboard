@@ -24,7 +24,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Supabase 시크릿이 등록되어 있으면 빌드에 주입된다 (없으면 localStorage 모드)
       - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       # Pages 소스가 'Deploy from a branch'로 남아 있으면 빌드되지 않은 소스가
       # 그대로 배포되어 흰 화면이 되므로, 'GitHub Actions' 방식으로 강제 전환한다.
       - name: Switch Pages source to GitHub Actions
