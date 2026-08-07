@@ -25,6 +25,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Pages 소스가 'Deploy from a branch'로 남아 있으면 빌드되지 않은 소스가
+      # 그대로 배포되어 흰 화면이 되므로, 'GitHub Actions' 방식으로 강제 전환한다.
+      - name: Switch Pages source to GitHub Actions
+        run: gh api -X PUT "repos/${{ github.repository }}/pages" -f build_type=workflow && gh api "repos/${{ github.repository }}/pages" --jq '{build_type, html_url}'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        continue-on-error: true
       - uses: actions/configure-pages@v5
         with:
           enablement: true
