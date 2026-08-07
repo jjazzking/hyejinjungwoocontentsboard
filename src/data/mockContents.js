@@ -9,7 +9,7 @@
  * - reference_url      : String (아이디어 원본 링크)
  * - reference_platform : 'INSTAGRAM' | 'YOUTUBE' | 'TIKTOK' | 'NONE'
  * - photo_urls         : String[] (완료 후 직접 찍은 사진)
- * - category           : String
+ * - categories         : String[] (복수 선택 가능)
  * - memo               : String
  */
 export const MOCK_CONTENTS = [
@@ -21,7 +21,7 @@ export const MOCK_CONTENTS = [
     reference_url: 'https://www.instagram.com/reel/C8xQvXqS1aB/',
     reference_platform: 'INSTAGRAM',
     photo_urls: [],
-    category: '여행',
+    categories: ['여행'],
     memo: '릴스에서 본 궁평항 노을 스팟! 김밥 싸들고 가서 차박 감성으로 보고 오자 🌅',
   },
   {
@@ -32,7 +32,7 @@ export const MOCK_CONTENTS = [
     reference_url: 'https://www.youtube.com/shorts/dQw4w9WgXcQ',
     reference_platform: 'YOUTUBE',
     photo_urls: [],
-    category: '홈데이트',
+    categories: ['홈데이트'],
     memo: '쇼츠 레시피 그대로 따라해 보기. 버터는 미리 실온에 꺼내두기!',
   },
   {
@@ -48,7 +48,7 @@ export const MOCK_CONTENTS = [
       'https://picsum.photos/seed/hangang3/800/600',
       'https://picsum.photos/seed/hangang4/800/600',
     ],
-    category: '액티비티',
+    categories: ['액티비티'],
     memo: '돗자리 명당 찾기 성공! 편의점 라면이 제일 맛있었다 🍜 다음엔 자전거도 타자.',
   },
   {
@@ -59,7 +59,7 @@ export const MOCK_CONTENTS = [
     reference_url: '',
     reference_platform: 'NONE',
     photo_urls: [],
-    category: '맛집',
+    categories: ['맛집'],
     memo: '지나가다 발견! 내추럴 와인 잔술 된다고 써있었음 🍷',
   },
   {
@@ -70,7 +70,7 @@ export const MOCK_CONTENTS = [
     reference_url: '',
     reference_platform: 'NONE',
     photo_urls: [],
-    category: '액티비티',
+    categories: ['액티비티', '맛집'],
     memo: '푸드트럭 털기. 저녁 먹지 말고 가기!',
   },
   {
@@ -84,7 +84,7 @@ export const MOCK_CONTENTS = [
       'https://picsum.photos/seed/euljiro1/800/600',
       'https://picsum.photos/seed/euljiro2/800/600',
     ],
-    category: '맛집',
+    categories: ['맛집'],
     memo: '골뱅이무침 → 노가리 골목 코스. 웨이팅 30분이었지만 그만한 가치가 있었음 ✨',
   },
 ]

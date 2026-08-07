@@ -3,6 +3,7 @@ import ContentCard from './ContentCard.jsx'
 import ContentFormModal from './ContentFormModal.jsx'
 import ClipboardPrompt from './ClipboardPrompt.jsx'
 import { useClipboardSuggestion } from '../hooks/useClipboardSuggestion.js'
+import { useCategories } from '../hooks/useCategories.js'
 import { analyzeLink } from '../utils/linkAnalyzer.js'
 
 const TABS = [
@@ -26,6 +27,7 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
   const [analyzing, setAnalyzing] = useState(false)
 
   const { suggestion, resolveSuggestion } = useClipboardSuggestion(contents)
+  const { categories, addCategory } = useCategories(contents)
 
   const filtered = useMemo(() => {
     const list = contents.filter((c) => c.status === activeTab)
@@ -184,6 +186,8 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
         <ContentFormModal
           initial={modal.mode === 'edit' ? modal.content : (modal.draft ?? null)}
           isEdit={modal.mode === 'edit'}
+          categoryOptions={categories}
+          onAddCategory={addCategory}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />

@@ -7,11 +7,9 @@ const EMPTY_FORM = {
   reference_url: '',
   reference_platform: 'NONE',
   photo_urls: '',
-  category: '',
+  categories: [],
   memo: '',
 }
-
-const CATEGORY_SUGGESTIONS = ['맛집', '여행', '홈데이트', '액티비티']
 
 /** reference_url에서 플랫폼을 자동으로 추측한다 (수동 선택으로 덮어쓸 수 있음). */
 function guessPlatform(url) {
@@ -25,13 +23,26 @@ function guessPlatform(url) {
  * 컨텐츠 추가/수정 폼 모달.
  * - isEdit=false + initial 있음: 클립보드 분석 등으로 미리 채워진 '추가' 초안
  * - photo_urls는 한 줄에 하나씩 입력받아 배열로 변환해서 저장
+ * - 카테고리는 칩 버튼으로 복수 선택하고, 새 카테고리를 즉석에서 추가할 수 있다
  */
-export default function ContentFormModal({ initial, isEdit = Boolean(initial), onSave, onClose }) {
+export default function ContentFormModal({
+  initial,
+  isEdit = Boolean(initial),
+  categoryOptions,
+  onAddCategory,
+  onSave,
+  onClose,
+}) {
   const [form, setForm] = useState(EMPTY_FORM)
+  const [newCategory, setNewCategory] = useState('')
 
   useEffect(() => {
     if (initial) {
-      setForm({ ...initial, photo_urls: (initial.photo_urls ?? []).join('\n') })
+      setForm({
+        ...initial,
+        categories: initial.categories ?? [],
+        photo_urls: (initial.photo_urls ?? []).join('\n'),
+      })
     } else {
       setForm({ ...EMPTY_FORM, date: new Date().toISOString().slice(0, 10) })
     }
@@ -51,12 +62,30 @@ export default function ContentFormModal({ initial, isEdit = Boolean(initial), o
     setForm((prev) => ({ ...prev, reference_url: url, reference_platform: guessPlatform(url) }))
   }
 
+  const toggleCategory = (name) => {
+    setForm((prev) => ({
+      ...prev,
+      categories: prev.categories.includes(name)
+        ? prev.categories.filter((c) => c !== name)
+        : [...prev.categories, name],
+    }))
+  }
+
+  const handleAddCategory = () => {
+    const added = onAddCategory(newCategory)
+    if (!added) return
+    setForm((prev) => ({
+      ...prev,
+      categories: prev.categories.includes(added) ? prev.categories : [...prev.categories, added],
+    }))
+    setNewCategory('')
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
     onSave({
       ...form,
       title: form.title.trim(),
-      category: form.category.trim() || '기타',
       photo_urls: form.photo_urls
         .split('\n')
         .map((s) => s.trim())
@@ -125,22 +154,51 @@ export default function ContentFormModal({ initial, isEdit = Boolean(initial), o
           </div>
 
           <div>
-            <label htmlFor="cf-category" className={labelClass}>
-              카테고리
-            </label>
-            <input
-              id="cf-category"
-              value={form.category}
-              onChange={set('category')}
-              placeholder="맛집, 여행, 홈데이트, 액티비티 …"
-              list="category-suggestions"
-              className={inputClass}
-            />
-            <datalist id="category-suggestions">
-              {CATEGORY_SUGGESTIONS.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
+            <span className={labelClass}>카테고리 (복수 선택 가능)</span>
+            <div className="flex flex-wrap gap-2">
+              {categoryOptions.map((name) => {
+                const selected = form.categories.includes(name)
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleCategory(name)}
+                    aria-pressed={selected}
+                    className={`rounded-full px-3 py-1.5 text-sm font-medium ring-1 transition-colors ${
+                      selected
+                        ? 'bg-rose-400 text-white ring-rose-400 hover:bg-rose-500'
+                        : 'bg-white text-neutral-600 ring-neutral-200 hover:bg-rose-50 hover:ring-rose-200'
+                    }`}
+                  >
+                    {selected ? '✓ ' : ''}
+                    {name}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleAddCategory()
+                  }
+                }}
+                placeholder="새 카테고리 이름"
+                aria-label="새 카테고리 이름"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={handleAddCategory}
+                disabled={!newCategory.trim()}
+                className="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-500 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ＋ 추가
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-[1fr_auto] gap-3">
