@@ -23,16 +23,15 @@ function guessPlatform(url) {
 
 /**
  * 컨텐츠 추가/수정 폼 모달.
- * - initial이 null이면 '새 컨텐츠 추가', 있으면 '컨텐츠 수정' 모드
+ * - isEdit=false + initial 있음: 클립보드 분석 등으로 미리 채워진 '추가' 초안
  * - photo_urls는 한 줄에 하나씩 입력받아 배열로 변환해서 저장
  */
-export default function ContentFormModal({ initial, onSave, onClose }) {
-  const isEdit = Boolean(initial)
+export default function ContentFormModal({ initial, isEdit = Boolean(initial), onSave, onClose }) {
   const [form, setForm] = useState(EMPTY_FORM)
 
   useEffect(() => {
     if (initial) {
-      setForm({ ...initial, photo_urls: initial.photo_urls.join('\n') })
+      setForm({ ...initial, photo_urls: (initial.photo_urls ?? []).join('\n') })
     } else {
       setForm({ ...EMPTY_FORM, date: new Date().toISOString().slice(0, 10) })
     }

@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import ContentCard from './ContentCard.jsx'
 import ContentFormModal from './ContentFormModal.jsx'
+import ClipboardPrompt from './ClipboardPrompt.jsx'
+import { useClipboardSuggestion } from '../hooks/useClipboardSuggestion.js'
+import { analyzeLink } from '../utils/linkAnalyzer.js'
 
 const TABS = [
   { key: 'PLANNING', label: '할 것들', emoji: '🗓️' },
@@ -10,14 +13,19 @@ const TABS = [
 /**
  * 메인 대시보드.
  * - 상단 탭으로 PLANNING / COMPLETED 전환
+ * - 매소너리(컬럼) 레이아웃: 임베드 카드는 크게, 매뉴얼 카드는 컴팩트하게
+ *   섞여 쌓이면서 컬럼 폭은 일정하게 유지된다
  * - 편집 모드 토글: 카드마다 상태 전환/수정/삭제 버튼 + 새 컨텐츠 추가 버튼 노출
- * - 추가/수정은 ContentFormModal에서 처리
+ * - 클립보드에서 SNS 링크를 발견하면 하단 배너로 카드 생성을 제안
  */
 export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggleStatus }) {
   const [activeTab, setActiveTab] = useState('PLANNING')
   const [editMode, setEditMode] = useState(false)
-  // modal: null(닫힘) | { mode: 'add' } | { mode: 'edit', content }
+  // modal: null(닫힘) | { mode: 'add', draft? } | { mode: 'edit', content }
   const [modal, setModal] = useState(null)
+  const [analyzing, setAnalyzing] = useState(false)
+
+  const { suggestion, resolveSuggestion } = useClipboardSuggestion(contents)
 
   const filtered = useMemo(() => {
     const list = contents.filter((c) => c.status === activeTab)
@@ -51,6 +59,16 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
     if (window.confirm(`'${content.title}' 컨텐츠를 삭제할까요?`)) {
       onRemove(content.id)
     }
+  }
+
+  // 클립보드 링크로 카드 초안 만들기: 게시물 분석 후 폼을 미리 채워서 연다
+  const handleCreateFromClipboard = async () => {
+    if (!suggestion) return
+    setAnalyzing(true)
+    const draft = await analyzeLink(suggestion.url)
+    setAnalyzing(false)
+    resolveSuggestion()
+    setModal({ mode: 'add', draft })
   }
 
   return (
@@ -106,17 +124,17 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
         </div>
       </nav>
 
-      {/* 카드 그리드 */}
+      {/* 카드 매소너리: 카드 높이가 제각각이어도 컬럼 폭이 일정해 질서가 유지된다 */}
       {filtered.length > 0 || editMode ? (
-        <main className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {/* 편집 모드일 때 맨 앞에 추가 카드 */}
+        <main className="columns-1 gap-6 sm:columns-2 lg:columns-3">
+          {/* 편집 모드일 때 맨 앞에 추가 카드 (컴팩트 사이즈) */}
           {editMode && (
             <button
               type="button"
               onClick={() => setModal({ mode: 'add' })}
-              className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-rose-200 bg-white/60 text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50"
+              className="mb-6 flex min-h-36 w-full break-inside-avoid flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-rose-200 bg-white/60 text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50"
             >
-              <span className="text-4xl">＋</span>
+              <span className="text-3xl">＋</span>
               <span className="text-sm font-medium">새 컨텐츠 추가</span>
             </button>
           )}
@@ -153,10 +171,19 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
         </div>
       )}
 
+      {/* 클립보드 링크 감지 배너 */}
+      <ClipboardPrompt
+        suggestion={suggestion}
+        analyzing={analyzing}
+        onCreate={handleCreateFromClipboard}
+        onDismiss={resolveSuggestion}
+      />
+
       {/* 추가/수정 모달 */}
       {modal && (
         <ContentFormModal
-          initial={modal.mode === 'edit' ? modal.content : null}
+          initial={modal.mode === 'edit' ? modal.content : (modal.draft ?? null)}
+          isEdit={modal.mode === 'edit'}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />
