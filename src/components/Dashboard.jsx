@@ -87,7 +87,7 @@ export default function Dashboard({
   const handleCreateFromClipboard = async () => {
     if (!suggestion) return
     setAnalyzing(true)
-    const draft = await analyzeLink(suggestion.url)
+    const draft = await analyzeLink(suggestion.url, categories)
     setAnalyzing(false)
     resolveSuggestion()
     setModal({ mode: 'add', draft })

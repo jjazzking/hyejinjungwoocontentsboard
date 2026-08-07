@@ -65,3 +65,35 @@ cp .env.example .env
 - **사진 업로드**: 카드 폼에서 📷 버튼으로 기기 사진을 바로 올릴 수 있어요.
   용량 절약을 위해 긴 변 1600px JPEG로 자동 압축됩니다.
 - **키가 없으면**: 예전처럼 localStorage 모드로 동작합니다 (기기별 저장).
+
+## 6. AI 링크 분석 켜기 (선택)
+
+링크로 카드를 만들 때 AI가 게시물 캡션·썸네일을 읽고
+**제목·카테고리·메모를 자동으로 채워주는** 기능입니다.
+Anthropic API 키가 필요해요 (https://console.anthropic.com 에서 발급, $5 충전이면 충분).
+
+### 6-1. API 키를 Supabase 시크릿으로 등록
+
+1. Supabase 대시보드 → **Edge Functions** → **Secrets** 탭
+2. **Add new secret**
+   - Name: `ANTHROPIC_API_KEY`
+   - Value: 발급받은 키 (`sk-ant-...`)
+
+> ⚠️ 이 키는 **깃허브 시크릿이 아니라 Supabase에만** 등록하세요.
+> 저장소와 사이트는 공개라서 키가 코드에 들어가면 안 됩니다.
+
+### 6-2. 분석 함수 배포
+
+1. Supabase 대시보드 → **Edge Functions** → **Deploy a new function** → **Via Editor**
+2. Function name: `analyze-link`
+3. 에디터 내용을 전부 지우고, 이 저장소의
+   [`supabase/functions/analyze-link/index.ts`](./supabase/functions/analyze-link/index.ts)
+   내용 전체를 붙여넣기
+4. **Deploy function** 클릭
+
+배포가 끝나면 바로 적용됩니다 — 사이트에서 링크를 복사해 '카드 만들기'를 누르면
+AI가 채운 초안이 열려요. 함수가 없거나 분석에 실패하면 예전 방식(제목만 가져오기)으로
+자동 폴백하니 걱정하지 않아도 됩니다.
+
+> 참고: 인스타그램은 게시물에 따라 서버에서도 캡션을 못 읽는 경우가 있어요
+> (비공개 계정, 로그인 요구 등). 그런 경우엔 링크만 채워진 초안이 열립니다.
