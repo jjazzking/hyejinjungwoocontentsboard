@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ContentCard from './ContentCard.jsx'
 import ContentFormModal from './ContentFormModal.jsx'
 import ClipboardPrompt from './ClipboardPrompt.jsx'
@@ -16,26 +16,46 @@ const TABS = [
  * - 상단 탭으로 PLANNING / COMPLETED 전환
  * - 매소너리(컬럼) 레이아웃: 임베드 카드는 크게, 매뉴얼 카드는 컴팩트하게
  *   섞여 쌓이면서 컬럼 폭은 일정하게 유지된다
- * - 편집 모드 토글: 카드마다 상태 전환/수정/삭제 버튼 + 새 컨텐츠 추가 버튼 노출
+ * - 편집 모드 토글: 카드마다 ☰(위치 이동)/상태 전환/수정/삭제 버튼 + 새 컨텐츠 추가 버튼 노출
+ * - 위치 이동: ☰을 누르면 이동 모드 — 다른 카드를 누르면 그 앞으로, 맨 뒤 슬롯을 누르면 맨 뒤로
  * - 클립보드에서 SNS 링크를 발견하면 하단 배너로 카드 생성을 제안
  */
-export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggleStatus }) {
+export default function Dashboard({
+  contents,
+  loading = false,
+  error = null,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onToggleStatus,
+  onMove,
+}) {
   const [activeTab, setActiveTab] = useState('PLANNING')
   const [editMode, setEditMode] = useState(false)
   // modal: null(닫힘) | { mode: 'add', draft? } | { mode: 'edit', content }
   const [modal, setModal] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
+  // 이동 모드: ☰을 누른 카드의 id (null이면 이동 중 아님)
+  const [movingId, setMovingId] = useState(null)
 
   const { suggestion, resolveSuggestion } = useClipboardSuggestion(contents)
   const { categories, addCategory } = useCategories(contents)
 
-  const filtered = useMemo(() => {
-    const list = contents.filter((c) => c.status === activeTab)
-    // 할 것들은 다가오는 순서, 한 것들은 최근 완료 순서로 정렬
-    return list.sort((a, b) =>
-      activeTab === 'PLANNING' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date),
-    )
-  }, [contents, activeTab])
+  // 배열 순서가 곧 표시 순서 — 탭별로 걸러내기만 한다
+  const filtered = useMemo(() => contents.filter((c) => c.status === activeTab), [contents, activeTab])
+
+  // ESC로 이동 모드 취소
+  useEffect(() => {
+    if (!movingId) return undefined
+    const onKeyDown = (e) => e.key === 'Escape' && setMovingId(null)
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [movingId])
+
+  const handleMoveHere = (targetId) => {
+    onMove(movingId, targetId)
+    setMovingId(null)
+  }
 
   const countByStatus = useMemo(
     () =>
@@ -85,7 +105,10 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
         {/* 편집 모드 토글 */}
         <button
           type="button"
-          onClick={() => setEditMode((prev) => !prev)}
+          onClick={() => {
+            setEditMode((prev) => !prev)
+            setMovingId(null)
+          }}
           aria-pressed={editMode}
           className={`absolute right-0 top-0 rounded-full px-3.5 py-1.5 text-xs font-medium shadow-sm ring-1 transition-colors ${
             editMode
@@ -106,7 +129,10 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => {
+                  setActiveTab(tab.key)
+                  setMovingId(null)
+                }}
                 aria-pressed={isActive}
                 className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
                   isActive
@@ -126,8 +152,27 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
         </div>
       </nav>
 
+      {/* 공유 DB 저장/불러오기 실패 안내 */}
+      {error && (
+        <p className="mb-4 rounded-xl bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-700 ring-1 ring-amber-200">
+          ⚠️ {error}
+        </p>
+      )}
+
+      {/* 이동 모드 안내 */}
+      {movingId && (
+        <p className="mb-4 text-center text-sm text-rose-500">
+          🚚 이동할 위치의 카드를 누르면 그 앞으로 들어가요 · <kbd className="rounded bg-rose-50 px-1.5 py-0.5 text-xs">ESC</kbd> 또는 ☰을 다시 누르면 취소
+        </p>
+      )}
+
       {/* 카드 매소너리: 카드 높이가 제각각이어도 컬럼 폭이 일정해 질서가 유지된다 */}
-      {filtered.length > 0 || editMode ? (
+      {loading ? (
+        <div className="flex flex-col items-center gap-3 py-20 text-center">
+          <span className="animate-pulse text-4xl">💌</span>
+          <p className="text-sm text-neutral-400">보드를 불러오는 중…</p>
+        </div>
+      ) : filtered.length > 0 || editMode ? (
         <main className="columns-1 gap-6 sm:columns-2 lg:columns-3">
           {/* 편집 모드일 때 맨 앞에 추가 카드 (컴팩트 사이즈) */}
           {editMode && (
@@ -146,11 +191,26 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
               key={content.id}
               content={content}
               editable={editMode}
+              moving={movingId === content.id}
+              isMoveTarget={Boolean(movingId) && movingId !== content.id}
+              onMoveStart={() => setMovingId((prev) => (prev === content.id ? null : content.id))}
+              onMoveHere={() => handleMoveHere(content.id)}
               onEdit={() => setModal({ mode: 'edit', content })}
               onDelete={() => handleDelete(content)}
               onToggleStatus={() => onToggleStatus(content.id)}
             />
           ))}
+
+          {/* 이동 모드: 맨 뒤로 보내는 슬롯 */}
+          {movingId && (
+            <button
+              type="button"
+              onClick={() => handleMoveHere(null)}
+              className="mb-6 flex min-h-24 w-full break-inside-avoid items-center justify-center rounded-2xl border-2 border-dashed border-rose-300 bg-rose-50/40 text-sm font-medium text-rose-500 transition-colors hover:bg-rose-100/60"
+            >
+              ⤵️ 맨 뒤로 이동
+            </button>
+          )}
         </main>
       ) : (
         <div className="flex flex-col items-center gap-3 py-20 text-center">

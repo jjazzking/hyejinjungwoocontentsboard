@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { isSupabaseConfigured } from '../lib/supabaseClient.js'
+import { uploadPhoto } from '../utils/uploadPhoto.js'
 
 const EMPTY_FORM = {
   title: '',
@@ -35,6 +37,7 @@ export default function ContentFormModal({
 }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [newCategory, setNewCategory] = useState('')
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     if (initial) {
@@ -79,6 +82,26 @@ export default function ContentFormModal({
       categories: prev.categories.includes(added) ? prev.categories : [...prev.categories, added],
     }))
     setNewCategory('')
+  }
+
+  // 기기에서 고른 사진들을 Storage에 올리고 URL 목록에 덧붙인다
+  const handleUploadFiles = async (e) => {
+    const files = [...e.target.files]
+    e.target.value = ''
+    if (files.length === 0) return
+    setUploading(true)
+    try {
+      const urls = []
+      for (const file of files) urls.push(await uploadPhoto(file))
+      setForm((prev) => ({
+        ...prev,
+        photo_urls: [prev.photo_urls.trim(), ...urls].filter(Boolean).join('\n'),
+      }))
+    } catch {
+      window.alert('사진 업로드에 실패했어요. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setUploading(false)
+    }
   }
 
   const handleSubmit = (e) => {
@@ -234,9 +257,28 @@ export default function ContentFormModal({
           </div>
 
           <div>
-            <label htmlFor="cf-photos" className={labelClass}>
-              사진 URL (한 줄에 하나씩)
-            </label>
+            <div className="mb-1 flex items-center justify-between">
+              <label htmlFor="cf-photos" className={`${labelClass} mb-0`}>
+                사진 {isSupabaseConfigured ? '' : 'URL (한 줄에 하나씩)'}
+              </label>
+              {isSupabaseConfigured && (
+                <label
+                  className={`cursor-pointer rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-500 transition-colors hover:bg-rose-100 ${
+                    uploading ? 'cursor-not-allowed opacity-50' : ''
+                  }`}
+                >
+                  {uploading ? '⏳ 업로드 중…' : '📷 사진 올리기'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={uploading}
+                    onChange={handleUploadFiles}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
             <textarea
               id="cf-photos"
               rows={3}
@@ -274,7 +316,8 @@ export default function ContentFormModal({
             </button>
             <button
               type="submit"
-              className="rounded-full bg-rose-400 px-5 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-rose-500"
+              disabled={uploading}
+              className="rounded-full bg-rose-400 px-5 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isEdit ? '저장하기' : '추가하기'}
             </button>

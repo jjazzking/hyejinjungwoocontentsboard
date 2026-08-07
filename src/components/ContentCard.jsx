@@ -13,9 +13,20 @@ function formatDate(dateStr) {
   return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long' }).format(date)
 }
 
-function EditActions({ isCompleted, onToggleStatus, onEdit, onDelete }) {
+function EditActions({ isCompleted, moving, onMoveStart, onToggleStatus, onEdit, onDelete }) {
   return (
     <>
+      <button
+        type="button"
+        onClick={onMoveStart}
+        aria-pressed={moving}
+        title={moving ? '이동 취소' : '위치 이동'}
+        className={`rounded-full px-2.5 py-1 text-xs font-medium shadow backdrop-blur transition-colors ${
+          moving ? 'bg-rose-400 text-white hover:bg-rose-500' : 'bg-white/90 text-neutral-700 hover:bg-white'
+        }`}
+      >
+        ☰
+      </button>
       <button
         type="button"
         onClick={onToggleStatus}
@@ -54,9 +65,20 @@ function EditActions({ isCompleted, onToggleStatus, onEdit, onDelete }) {
  *               (매소너리 컬럼에서 작은 카드 여러 장이 쌓여 큰 카드와 맞물린다)
  *
  * 미디어 우선순위: COMPLETED+사진 → 캐러셀, 임베드 가능 → 임베드, 그 외 → 컴팩트
- * 편집 모드(editable)에서는 상태 전환 / 수정 / 삭제 버튼이 표시된다.
+ * 편집 모드(editable)에서는 ☰(위치 이동) / 상태 전환 / 수정 / 삭제 버튼이 표시된다.
+ * moving: 이 카드가 이동 중 / isMoveTarget: 다른 카드의 이동 목적지로 선택 가능
  */
-export default function ContentCard({ content, editable = false, onEdit, onDelete, onToggleStatus }) {
+export default function ContentCard({
+  content,
+  editable = false,
+  moving = false,
+  isMoveTarget = false,
+  onMoveStart,
+  onMoveHere,
+  onEdit,
+  onDelete,
+  onToggleStatus,
+}) {
   const { title, status, date, reference_url, reference_platform, photo_urls, categories, memo } = content
 
   const isCompleted = status === 'COMPLETED'
@@ -68,9 +90,25 @@ export default function ContentCard({ content, editable = false, onEdit, onDelet
   return (
     <article
       className={`relative mb-6 flex break-inside-avoid flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 transition-shadow hover:shadow-md ${
-        editable ? 'ring-2 ring-rose-200' : 'ring-neutral-900/5'
+        moving
+          ? 'opacity-70 ring-2 ring-rose-400'
+          : editable
+            ? 'ring-2 ring-rose-200'
+            : 'ring-neutral-900/5'
       }`}
     >
+      {/* 이동 모드: 이 카드를 눌러 이동 중인 카드를 이 앞으로 배치 */}
+      {isMoveTarget && (
+        <button
+          type="button"
+          onClick={onMoveHere}
+          className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-rose-300 bg-rose-50/40 transition-colors hover:bg-rose-100/60"
+        >
+          <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-medium text-rose-500 shadow">
+            ⤴️ 이 앞으로 이동
+          </span>
+        </button>
+      )}
       {/* 미디어 영역 — 컴팩트 카드는 얇은 포인트 바로 대체 */}
       {compact ? (
         <div className="h-1.5 w-full bg-gradient-to-r from-rose-300 via-orange-200 to-amber-200" />
@@ -86,6 +124,8 @@ export default function ContentCard({ content, editable = false, onEdit, onDelet
           <div className="flex gap-1.5 px-4 pt-3">
             <EditActions
               isCompleted={isCompleted}
+              moving={moving}
+              onMoveStart={onMoveStart}
               onToggleStatus={onToggleStatus}
               onEdit={onEdit}
               onDelete={onDelete}
@@ -95,6 +135,8 @@ export default function ContentCard({ content, editable = false, onEdit, onDelet
           <div className="absolute left-2 top-2 z-10 flex gap-1.5">
             <EditActions
               isCompleted={isCompleted}
+              moving={moving}
+              onMoveStart={onMoveStart}
               onToggleStatus={onToggleStatus}
               onEdit={onEdit}
               onDelete={onDelete}
