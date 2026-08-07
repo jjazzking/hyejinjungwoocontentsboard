@@ -20,7 +20,16 @@ const TABS = [
  * - 위치 이동: ☰을 누르면 이동 모드 — 다른 카드를 누르면 그 앞으로, 맨 뒤 슬롯을 누르면 맨 뒤로
  * - 클립보드에서 SNS 링크를 발견하면 하단 배너로 카드 생성을 제안
  */
-export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggleStatus, onMove }) {
+export default function Dashboard({
+  contents,
+  loading = false,
+  error = null,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onToggleStatus,
+  onMove,
+}) {
   const [activeTab, setActiveTab] = useState('PLANNING')
   const [editMode, setEditMode] = useState(false)
   // modal: null(닫힘) | { mode: 'add', draft? } | { mode: 'edit', content }
@@ -143,6 +152,13 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
         </div>
       </nav>
 
+      {/* 공유 DB 저장/불러오기 실패 안내 */}
+      {error && (
+        <p className="mb-4 rounded-xl bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-700 ring-1 ring-amber-200">
+          ⚠️ {error}
+        </p>
+      )}
+
       {/* 이동 모드 안내 */}
       {movingId && (
         <p className="mb-4 text-center text-sm text-rose-500">
@@ -151,7 +167,12 @@ export default function Dashboard({ contents, onAdd, onUpdate, onRemove, onToggl
       )}
 
       {/* 카드 매소너리: 카드 높이가 제각각이어도 컬럼 폭이 일정해 질서가 유지된다 */}
-      {filtered.length > 0 || editMode ? (
+      {loading ? (
+        <div className="flex flex-col items-center gap-3 py-20 text-center">
+          <span className="animate-pulse text-4xl">💌</span>
+          <p className="text-sm text-neutral-400">보드를 불러오는 중…</p>
+        </div>
+      ) : filtered.length > 0 || editMode ? (
         <main className="columns-1 gap-6 sm:columns-2 lg:columns-3">
           {/* 편집 모드일 때 맨 앞에 추가 카드 (컴팩트 사이즈) */}
           {editMode && (
