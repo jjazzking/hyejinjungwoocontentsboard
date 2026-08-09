@@ -85,25 +85,24 @@ function extractMetaContent(html: string, property: string) {
   return content ? decodeEntities(content) : null
 }
 
-/**
- * Instagram: 로그인 없이 접근 가능한 두 경로를 순서대로 시도한다.
- * 1) 게시물 페이지의 og:title/og:description/og:image
- * 2) 공개 임베드 페이지(/embed/captioned)의 캡션·이미지
- */
-async function fetchInstagramMeta(url: string): Promise<PostMeta | null> {
+/** 1) 게시물 페이지의 og:title/og:description/og:image */
+async function fetchInstagramOgMeta(url: string): Promise<PostMeta | null> {
   try {
     const res = await fetchWithTimeout(url, { headers: BROWSER_HEADERS })
-    if (res.ok) {
-      const html = await res.text()
-      const caption =
-        extractMetaContent(html, 'og:description') ?? extractMetaContent(html, 'og:title')
-      const imageUrl = extractMetaContent(html, 'og:image')
-      if (caption || imageUrl) return { caption: caption ?? '', imageUrl }
-    }
+    if (!res.ok) return null
+    const html = await res.text()
+    const caption =
+      extractMetaContent(html, 'og:description') ?? extractMetaContent(html, 'og:title')
+    const imageUrl = extractMetaContent(html, 'og:image')
+    if (!caption && !imageUrl) return null
+    return { caption: caption ?? '', imageUrl }
   } catch {
-    // 다음 경로로 폴백
+    return null
   }
+}
 
+/** 2) 공개 임베드 페이지(/embed/captioned)의 캡션·이미지 */
+async function fetchInstagramEmbedMeta(url: string): Promise<PostMeta | null> {
   try {
     const embedUrl = url.replace(/\/?(\?.*)?$/, '/embed/captioned/')
     const res = await fetchWithTimeout(embedUrl, { headers: BROWSER_HEADERS })
@@ -119,6 +118,43 @@ async function fetchInstagramMeta(url: string): Promise<PostMeta | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * 3) 임베드 미러(InstaFix 계열): 인스타그램이 데이터센터 요청을 막을 때의 마지막 폴백.
+ * 디스코드/텔레그램 미리보기용 서비스라 봇 User-Agent로 요청해야 og 태그를 내려준다.
+ */
+const INSTAGRAM_MIRROR_HOSTS = ['www.ddinstagram.com', 'www.kkinstagram.com']
+
+async function fetchInstagramMirrorMeta(url: string): Promise<PostMeta | null> {
+  const { pathname } = new URL(url)
+  for (const host of INSTAGRAM_MIRROR_HOSTS) {
+    try {
+      const res = await fetchWithTimeout(`https://${host}${pathname}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)' },
+      })
+      if (!res.ok) continue
+      const html = await res.text()
+      const caption = extractMetaContent(html, 'og:description') ?? ''
+      let imageUrl = extractMetaContent(html, 'og:image')
+      if (imageUrl?.startsWith('/')) imageUrl = `https://${host}${imageUrl}`
+      if (caption || imageUrl) return { caption, imageUrl }
+    } catch {
+      // 다음 미러로
+    }
+  }
+  return null
+}
+
+/** Instagram: 캡션을 얻을 때까지 세 경로를 순서대로 시도한다. */
+async function fetchInstagramMeta(url: string): Promise<PostMeta | null> {
+  let imageOnly: PostMeta | null = null
+  for (const attempt of [fetchInstagramOgMeta, fetchInstagramEmbedMeta, fetchInstagramMirrorMeta]) {
+    const meta = await attempt(url)
+    if (meta?.caption) return { caption: meta.caption, imageUrl: meta.imageUrl ?? imageOnly?.imageUrl ?? null }
+    if (meta?.imageUrl && !imageOnly) imageOnly = meta
+  }
+  return imageOnly
 }
 
 async function fetchPostMeta(url: string, platform: string): Promise<PostMeta | null> {
