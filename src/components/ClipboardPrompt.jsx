@@ -40,7 +40,7 @@ export default function ClipboardPrompt({ suggestion, analyzing, onCreate, onDis
             disabled={analyzing}
             className="rounded-full bg-rose-400 px-4 py-1.5 text-xs font-medium text-white shadow transition-colors hover:bg-rose-500 disabled:opacity-70"
           >
-            {analyzing ? '게시물 분석 중…' : '✨ 이 게시물로 카드 만들기'}
+            {analyzing ? '게시물 분석 중… (최대 1분)' : '✨ 이 게시물로 카드 만들기'}
           </button>
         </div>
       </div>

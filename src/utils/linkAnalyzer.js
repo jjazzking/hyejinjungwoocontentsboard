@@ -67,12 +67,13 @@ async function fetchOEmbed(platform, url) {
 }
 
 /** Edge Function에 AI 분석을 요청한다. 실패하면 null (oEmbed 폴백). */
-async function fetchAiDraft(url, categoryOptions) {
+async function fetchAiDraft(body) {
   if (!isSupabaseConfigured) return null
   try {
-    const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: 'timeout' }), 25000))
+    // Apify 수집 경로까지 가면 1분 이상 걸릴 수 있어 넉넉하게 잡는다
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: 'timeout' }), 120000))
     const { data, error } = await Promise.race([
-      supabase.functions.invoke('analyze-link', { body: { url, categories: categoryOptions } }),
+      supabase.functions.invoke('analyze-link', { body }),
       timeout,
     ])
     if (error || !data?.title) return null
@@ -83,13 +84,27 @@ async function fetchAiDraft(url, categoryOptions) {
 }
 
 /**
+ * 사용자가 직접 붙여넣은 캡션을 AI로 분석한다 (인스타 수집이 막혔을 때의 경로).
+ * 성공 시 { title, categories, memo }, 실패 시 null.
+ */
+export async function analyzeCaption(caption, url, categoryOptions = []) {
+  const ai = await fetchAiDraft({
+    caption,
+    url: url?.trim() || undefined,
+    categories: categoryOptions,
+  })
+  if (!ai) return null
+  return { title: ai.title, categories: ai.categories ?? [], memo: ai.memo ?? '' }
+}
+
+/**
  * 링크를 분석해 추가 폼에 미리 채울 초안을 만든다.
  * AI 분석이 실패해도(미배포·타임아웃 등) 링크·플랫폼이 채워진 초안은 항상 반환한다.
  */
 export async function analyzeLink(url, categoryOptions = []) {
   const platform = detectPlatform(url)
 
-  const ai = await fetchAiDraft(url, categoryOptions)
+  const ai = await fetchAiDraft({ url, categories: categoryOptions })
   if (ai) {
     return {
       title: ai.title,

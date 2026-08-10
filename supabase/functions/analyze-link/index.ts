@@ -1,8 +1,10 @@
 // AI 링크 분석 Edge Function.
 //
-// POST { url, categories: string[] }
+// POST { url?, caption?, categories: string[] }
 //  → 게시물의 캡션·썸네일을 서버에서 수집하고 Claude로 분석해
 //    { title, categories, memo } 카드 초안을 돌려준다.
+//  → caption이 함께 오면 수집을 건너뛰고 그 텍스트를 바로 분석한다
+//    (인스타그램이 서버 수집을 막을 때 사용자가 캡션을 직접 붙여넣는 경로).
 //
 // Anthropic API 키는 Supabase 시크릿(ANTHROPIC_API_KEY)으로만 보관한다 —
 // 프론트엔드/저장소에는 절대 넣지 않는다. 배포 방법은 SUPABASE_SETUP.md 6번 참고.
@@ -146,15 +148,90 @@ async function fetchInstagramMirrorMeta(url: string): Promise<PostMeta | null> {
   return null
 }
 
-/** Instagram: 캡션을 얻을 때까지 세 경로를 순서대로 시도한다. */
-async function fetchInstagramMeta(url: string): Promise<PostMeta | null> {
-  let imageOnly: PostMeta | null = null
-  for (const attempt of [fetchInstagramOgMeta, fetchInstagramEmbedMeta, fetchInstagramMirrorMeta]) {
-    const meta = await attempt(url)
-    if (meta?.caption) return { caption: meta.caption, imageUrl: meta.imageUrl ?? imageOnly?.imageUrl ?? null }
-    if (meta?.imageUrl && !imageOnly) imageOnly = meta
+/**
+ * 4) Apify 수집 서비스(APIFY_TOKEN 시크릿이 있을 때만).
+ * 무료 경로가 모두 막혔을 때 쓰는 유료(무료 크레딧) 경로 — 느리지만 성공률이 높다.
+ */
+const APIFY_ACTOR = 'apify~instagram-scraper'
+
+async function fetchInstagramApifyMeta(url: string): Promise<PostMeta | null> {
+  const token = Deno.env.get('APIFY_TOKEN')
+  if (!token) return null
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.apify.com/v2/acts/${APIFY_ACTOR}/run-sync-get-dataset-items`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          directUrls: [url],
+          resultsType: 'details',
+          resultsLimit: 1,
+          addParentData: false,
+        }),
+      },
+      90000,
+    )
+    if (!res.ok) {
+      console.error('apify failed:', res.status, (await res.text()).slice(0, 300))
+      return null
+    }
+    const items = await res.json()
+    const post = Array.isArray(items) ? items[0] : null
+    if (!post) return null
+
+    const caption = [
+      typeof post.caption === 'string' ? post.caption : '',
+      post.locationName ? `장소: ${post.locationName}` : '',
+      post.ownerUsername ? `계정: @${post.ownerUsername}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+    const imageUrl =
+      post.displayUrl ??
+      (Array.isArray(post.images) ? post.images[0] : null) ??
+      post.childPosts?.[0]?.displayUrl ??
+      null
+    if (!caption && !imageUrl) return null
+    return { caption, imageUrl: typeof imageUrl === 'string' ? imageUrl : null }
+  } catch (err) {
+    console.error('apify error:', err)
+    return null
   }
-  return imageOnly
+}
+
+/**
+ * 로그인 벽·에러 페이지에서 나오는 껍데기 문구를 캡션으로 착각하지 않도록 거른다.
+ * (여기서 걸러야 다음 수집 경로로 넘어간다)
+ */
+const JUNK_CAPTION = /^(instagram|로그인|login|see this|이 사진|이 게시물|something went wrong|page not found)/i
+
+function isUsefulCaption(caption: string | undefined) {
+  if (!caption) return false
+  const trimmed = caption.trim()
+  return trimmed.length >= 15 && !JUNK_CAPTION.test(trimmed)
+}
+
+/**
+ * Instagram: 캡션을 얻을 때까지 무료 경로 → Apify 순서로 시도한다.
+ * (무료 경로를 먼저 써서 Apify 크레딧 소모를 최소화한다)
+ */
+async function fetchInstagramMeta(url: string): Promise<PostMeta | null> {
+  let fallback: PostMeta | null = null
+  for (const attempt of [
+    fetchInstagramOgMeta,
+    fetchInstagramEmbedMeta,
+    fetchInstagramMirrorMeta,
+    fetchInstagramApifyMeta,
+  ]) {
+    const meta = await attempt(url)
+    if (isUsefulCaption(meta?.caption)) {
+      return { caption: meta!.caption, imageUrl: meta!.imageUrl ?? fallback?.imageUrl ?? null }
+    }
+    if (meta && !fallback && (meta.caption || meta.imageUrl)) fallback = meta
+  }
+  return fallback
 }
 
 async function fetchPostMeta(url: string, platform: string): Promise<PostMeta | null> {
@@ -197,7 +274,7 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) return json(500, { error: 'ANTHROPIC_API_KEY secret is not set' })
 
-  let body: { url?: string; categories?: string[] }
+  let body: { url?: string; caption?: string; categories?: string[] }
   try {
     body = await req.json()
   } catch {
@@ -205,12 +282,15 @@ Deno.serve(async (req) => {
   }
 
   const url = body.url?.trim()
-  if (!url) return json(400, { error: 'url is required' })
-  const platform = detectPlatform(url)
-  if (platform === 'NONE') return json(400, { error: 'unsupported platform' })
+  const pastedCaption = typeof body.caption === 'string' ? body.caption.trim() : ''
+  if (!url && !pastedCaption) return json(400, { error: 'url or caption is required' })
+  const platform = url ? detectPlatform(url) : 'NONE'
+  if (!pastedCaption && platform === 'NONE') return json(400, { error: 'unsupported platform' })
   const categories = Array.isArray(body.categories) ? body.categories.filter(Boolean) : []
 
-  const meta = await fetchPostMeta(url, platform)
+  const meta = pastedCaption
+    ? { caption: pastedCaption, imageUrl: null }
+    : await fetchPostMeta(url!, platform)
   if (!meta?.caption && !meta?.imageUrl) {
     return json(422, { error: 'could not read the post (login-only or deleted?)' })
   }
