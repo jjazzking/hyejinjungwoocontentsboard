@@ -17,6 +17,7 @@ const ROW_FIELDS = [
   'reference_platform',
   'photo_urls',
   'categories',
+  'places',
   'memo',
 ]
 

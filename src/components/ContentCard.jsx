@@ -79,7 +79,8 @@ export default function ContentCard({
   onDelete,
   onToggleStatus,
 }) {
-  const { title, status, date, reference_url, reference_platform, photo_urls, categories, memo } = content
+  const { title, status, date, reference_url, reference_platform, photo_urls, categories, places, memo } =
+    content
 
   const isCompleted = status === 'COMPLETED'
   const showPhotos = isCompleted && photo_urls.length > 0
@@ -169,6 +170,30 @@ export default function ContentCard({
         <time dateTime={date} className="text-xs text-neutral-400">
           {formatDate(date)}
         </time>
+
+        {/* 장소: 네이버 지도 링크가 있으면 눌러서 바로 열 수 있게 */}
+        {(places ?? []).length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {places.map((place, index) => (
+              <li key={`${place.name}-${index}`} className="text-xs text-neutral-500">
+                📍{' '}
+                {place.url ? (
+                  <a
+                    href={place.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-rose-500"
+                  >
+                    {place.name}
+                  </a>
+                ) : (
+                  place.name
+                )}
+                {place.address && <span className="text-neutral-400"> · {place.address}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
 
         {memo && <p className="text-sm leading-relaxed text-neutral-600">{memo}</p>}
 

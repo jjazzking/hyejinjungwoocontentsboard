@@ -10,6 +10,10 @@
  * - reference_platform : 'INSTAGRAM' | 'YOUTUBE' | 'TIKTOK' | 'NONE'
  * - photo_urls         : String[] (완료 후 직접 찍은 사진)
  * - categories         : String[] (복수 선택 가능)
+ * - places             : Place[]  (장소, 없을 수 있음)
+ *     Place = { name, address, lat, lng, category, url, source }
+ *     source = 'MANUAL' | 'AI' | 'INSTAGRAM' | 'NAVER_LINK'
+ *     lat/lng 는 null 가능 — 이름만 아는 장소는 지도에 뜨지 않는다
  * - memo               : String
  */
 export const MOCK_CONTENTS = [
@@ -49,6 +53,17 @@ export const MOCK_CONTENTS = [
       'https://picsum.photos/seed/hangang4/800/600',
     ],
     categories: ['액티비티'],
+    places: [
+      {
+        name: '한강공원 반포지구',
+        address: '서울 서초구 신반포로11길 40',
+        lat: 37.5103,
+        lng: 126.9955,
+        category: '여행,명소>공원',
+        url: 'https://map.naver.com/p/search/%ED%95%9C%EA%B0%95%EA%B3%B5%EC%9B%90%20%EB%B0%98%ED%8F%AC%EC%A7%80%EA%B5%AC',
+        source: 'MANUAL',
+      },
+    ],
     memo: '돗자리 명당 찾기 성공! 편의점 라면이 제일 맛있었다 🍜 다음엔 자전거도 타자.',
   },
   {

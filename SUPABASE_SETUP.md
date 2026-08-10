@@ -114,3 +114,56 @@ AI가 채운 초안이 열려요. 함수가 없거나 분석에 실패하면 예
 등록하면 무료 경로(og태그·임베드·미러)를 먼저 시도하고, 전부 실패했을 때만
 Apify를 호출합니다 — 크레딧을 아끼기 위해서예요. Apify 경로는 20~60초 정도 걸립니다.
 시크릿이 없으면 이 단계는 그냥 건너뛰고 동작합니다.
+
+## 7. 장소 검색 켜기 (선택)
+
+카드에 **📍 장소**를 붙이는 기능입니다. 가게 이름으로 검색하면 주소와 좌표까지
+저장돼서, 나중에 지도에 핀으로 표시할 수 있어요.
+
+### 7-1. DB에 장소 컬럼 추가 ⚠️ 먼저 할 것
+
+Supabase 대시보드 → **SQL Editor** → **New query** 에 붙여넣고 **Run**:
+
+```sql
+alter table public.contents
+  add column if not exists places jsonb not null default '[]'::jsonb;
+```
+
+> 기존 카드는 빈 목록이 되어 아무 영향이 없습니다.
+> [`supabase/schema.sql`](./supabase/schema.sql) 전체를 다시 실행해도 결과는 같아요.
+> **이 SQL을 실행하기 전에는 장소를 저장할 수 없으니** 이 단계를 먼저 끝내세요.
+
+### 7-2. 네이버 검색 API 키 발급
+
+1. https://www.ncloud.com 가입/로그인 (네이버 아이디 연동)
+2. 콘솔 → **Services → Application Services → NAVER API HUB**
+3. **Application 등록** → API 선택 화면에서 **`지역` (NAVER Search Local API)** 만 체크 → 다음
+4. Application 이름을 넣고 등록하면 인증 정보가 발급됩니다
+
+> 요금: 검색 API는 **0 ~ 775,000건 무료(일 최대 25,000건)**.
+> 이 보드가 쓰는 양은 하루 수십 건 수준이라 한도에 닿을 일이 없습니다.
+
+### 7-3. 키를 Supabase 시크릿으로 등록
+
+Supabase 대시보드 → **Edge Functions** → **Secrets** 에 2개 추가:
+
+| Name | Value |
+|---|---|
+| `NAVER_CLIENT_ID` | 발급받은 Client ID (또는 API Key ID) |
+| `NAVER_CLIENT_SECRET` | 발급받은 Client Secret (또는 API Key) |
+
+> ⚠️ 이 키도 **깃허브가 아니라 Supabase에만** 등록하세요.
+
+### 7-4. 검색 함수 배포
+
+**Edge Functions** → **Deploy a new function** → **Via Editor**
+
+- Function name: `place-search`
+- 내용: [`supabase/functions/place-search/index.ts`](./supabase/functions/place-search/index.ts) 전체 붙여넣기
+
+발급 경로에 따라 인증 헤더 이름이 다를 수 있어서, 함수가 가능한 조합을 자동으로
+시도하고 성공한 것을 기억합니다. 잘 안 되면 **Edge Functions → place-search → Logs** 에서
+`place-search:` 로 시작하는 줄을 확인하세요.
+
+시크릿이 없거나 검색이 실패해도 장소 **이름만 직접 입력**해서 저장할 수 있습니다
+(좌표가 없을 뿐, 카드에는 그대로 표시돼요).

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { uploadPhoto } from '../utils/uploadPhoto.js'
 import { analyzeCaption } from '../utils/linkAnalyzer.js'
+import PlacePicker from './PlacePicker.jsx'
 
 const EMPTY_FORM = {
   title: '',
@@ -11,6 +12,7 @@ const EMPTY_FORM = {
   reference_platform: 'NONE',
   photo_urls: '',
   categories: [],
+  places: [],
   memo: '',
 }
 
@@ -47,6 +49,7 @@ export default function ContentFormModal({
       setForm({
         ...initial,
         categories: initial.categories ?? [],
+        places: initial.places ?? [],
         photo_urls: (initial.photo_urls ?? []).join('\n'),
       })
     } else {
@@ -130,6 +133,7 @@ export default function ContentFormModal({
     onSave({
       ...form,
       title: form.title.trim(),
+      places: form.places ?? [],
       photo_urls: form.photo_urls
         .split('\n')
         .map((s) => s.trim())
@@ -269,6 +273,13 @@ export default function ContentFormModal({
               </button>
             </div>
           </div>
+
+          <PlacePicker
+            value={form.places}
+            onChange={(places) => setForm((prev) => ({ ...prev, places }))}
+            inputClass={inputClass}
+            labelClass={labelClass}
+          />
 
           <div className="grid grid-cols-[1fr_auto] gap-3">
             <div>

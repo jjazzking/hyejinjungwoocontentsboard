@@ -18,6 +18,9 @@ create table if not exists public.contents (
                      check (reference_platform in ('INSTAGRAM', 'YOUTUBE', 'TIKTOK', 'NONE')),
   photo_urls         text[] not null default '{}',
   categories         text[] not null default '{}',
+  -- 장소 목록. [{ name, address, lat, lng, category, url, source }]
+  -- 좌표(lat/lng)는 없을 수 있다 — 이름만 아는 장소도 저장 가능
+  places             jsonb not null default '[]'::jsonb,
   memo               text not null default '',
   sort_order         double precision not null default extract(epoch from now()),
   created_at         timestamptz not null default now(),
@@ -25,6 +28,10 @@ create table if not exists public.contents (
 );
 
 create index if not exists contents_status_sort_idx on public.contents (status, sort_order);
+
+-- 이미 테이블을 만들어 둔 경우를 위한 추가 컬럼 (없으면 만들고, 있으면 건너뜀)
+alter table public.contents
+  add column if not exists places jsonb not null default '[]'::jsonb;
 
 -- updated_at 자동 갱신
 create or replace function public.set_updated_at()
