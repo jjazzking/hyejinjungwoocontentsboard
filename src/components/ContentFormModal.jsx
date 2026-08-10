@@ -47,11 +47,15 @@ export default function ContentFormModal({
   const [uploading, setUploading] = useState(false)
   const [aiCaption, setAiCaption] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
+  // 자동 장소를 못 찾았을 때 서버가 알려준 이유 (저장 대상은 아님)
+  const [placeDebug, setPlaceDebug] = useState('')
 
   useEffect(() => {
     if (initial) {
+      const { place_debug, ...rest } = initial
+      setPlaceDebug(place_debug ?? '')
       setForm({
-        ...initial,
+        ...rest,
         categories: initial.categories ?? [],
         places: initial.places ?? [],
         photo_urls: (initial.photo_urls ?? []).join('\n'),
@@ -285,6 +289,7 @@ export default function ContentFormModal({
           <PlacePicker
             value={form.places}
             onChange={(places) => setForm((prev) => ({ ...prev, places }))}
+            hint={form.places.length === 0 ? placeDebug : ''}
             inputClass={inputClass}
             labelClass={labelClass}
           />

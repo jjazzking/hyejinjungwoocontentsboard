@@ -16,7 +16,7 @@ const SOURCE_LABEL = {
  * value/onChange 는 장소 배열을 그대로 주고받는다.
  * 한 카드에 여러 곳(맛집 투어 등)을 담을 수 있게 배열로 두었다.
  */
-export default function PlacePicker({ value = [], onChange, inputClass, labelClass }) {
+export default function PlacePicker({ value = [], onChange, hint = '', inputClass, labelClass }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -75,6 +75,13 @@ export default function PlacePicker({ value = [], onChange, inputClass, labelCla
   return (
     <div>
       <span className={labelClass}>📍 장소</span>
+
+      {/* 자동으로 장소를 못 찾았을 때 그 이유를 그대로 보여준다 */}
+      {hint && (
+        <p className="mb-2 break-words rounded-lg bg-neutral-100 px-2 py-1.5 text-[11px] text-neutral-500">
+          🔍 자동 장소 없음 — {hint}
+        </p>
+      )}
 
       {/* 선택된 장소들 */}
       {value.length > 0 && (
