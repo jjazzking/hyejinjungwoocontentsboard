@@ -70,7 +70,8 @@ async function fetchOEmbed(platform, url) {
 async function fetchAiDraft(body) {
   if (!isSupabaseConfigured) return null
   try {
-    const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: 'timeout' }), 25000))
+    // Apify 수집 경로까지 가면 1분 이상 걸릴 수 있어 넉넉하게 잡는다
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: 'timeout' }), 120000))
     const { data, error } = await Promise.race([
       supabase.functions.invoke('analyze-link', { body }),
       timeout,
