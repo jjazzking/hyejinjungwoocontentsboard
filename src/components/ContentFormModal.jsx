@@ -103,12 +103,16 @@ export default function ContentFormModal({
       window.alert('AI 분석에 실패했어요. 잠시 후 다시 시도해 주세요.')
       return
     }
-    setForm((prev) => ({
-      ...prev,
-      title: draft.title || prev.title,
-      memo: draft.memo || prev.memo,
-      categories: [...new Set([...prev.categories, ...draft.categories])],
-    }))
+    setForm((prev) => {
+      const known = new Set((prev.places ?? []).map((p) => p.name))
+      return {
+        ...prev,
+        title: draft.title || prev.title,
+        memo: draft.memo || prev.memo,
+        categories: [...new Set([...prev.categories, ...draft.categories])],
+        places: [...(prev.places ?? []), ...(draft.places ?? []).filter((p) => !known.has(p.name))],
+      }
+    })
     setAiCaption('')
   }
 

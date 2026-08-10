@@ -36,6 +36,19 @@ export default function PlacePicker({ value = [], onChange, inputClass, labelCla
 
   const removePlace = (index) => onChange(value.filter((_, i) => i !== index))
 
+  /** 자동으로 찾아준 장소를 "맞다"고 확정 — 확인 필요 배지가 사라진다 */
+  const confirmPlace = (index) =>
+    onChange(value.map((p, i) => (i === index ? { ...p, source: 'MANUAL' } : p)))
+
+  /** 자동 장소가 틀렸을 때: 목록에서 빼고 그 이름을 검색창에 올려 다시 찾게 한다 */
+  const researchPlace = (index) => {
+    setQuery(value[index].name)
+    setResults(null)
+    setMessage('')
+    setDetail('')
+    removePlace(index)
+  }
+
   const handleSearch = async () => {
     const trimmed = query.trim()
     if (!trimmed) return
@@ -86,6 +99,26 @@ export default function PlacePicker({ value = [], onChange, inputClass, labelCla
                   )}
                 </p>
                 {place.address && <p className="truncate text-xs text-neutral-500">{place.address}</p>}
+
+                {/* 자동으로 찾아준 장소는 확정하거나 다시 찾을 수 있게 한다 */}
+                {SOURCE_LABEL[place.source] && (
+                  <div className="mt-1.5 flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => confirmPlace(index)}
+                      className="rounded-full bg-rose-400 px-2.5 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-rose-500"
+                    >
+                      ✓ 맞아요
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => researchPlace(index)}
+                      className="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-medium text-neutral-600 ring-1 ring-neutral-200 transition-colors hover:bg-neutral-50"
+                    >
+                      🔍 다시 찾기
+                    </button>
+                  </div>
+                )}
               </div>
               <button
                 type="button"

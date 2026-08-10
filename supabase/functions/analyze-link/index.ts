@@ -2,12 +2,16 @@
 //
 // POST { url?, caption?, categories: string[] }
 //  → 게시물의 캡션·썸네일을 서버에서 수집하고 Claude로 분석해
-//    { title, categories, memo } 카드 초안을 돌려준다.
+//    { title, categories, memo, places } 카드 초안을 돌려준다.
 //  → caption이 함께 오면 수집을 건너뛰고 그 텍스트를 바로 분석한다
 //    (인스타그램이 서버 수집을 막을 때 사용자가 캡션을 직접 붙여넣는 경로).
+//  → 장소는 인스타 위치 태그(가장 정확) 또는 캡션에서 AI가 뽑은 검색어로
+//    네이버 지역 검색까지 돌려서 좌표까지 채운 뒤 돌려준다. 추측이 섞이므로
+//    source를 함께 보내 사용자가 확인·확정할 수 있게 한다.
 //
 // Anthropic API 키는 Supabase 시크릿(ANTHROPIC_API_KEY)으로만 보관한다 —
 // 프론트엔드/저장소에는 절대 넣지 않는다. 배포 방법은 SUPABASE_SETUP.md 6번 참고.
+// 장소 검색에는 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 시크릿을 쓴다(없으면 장소는 건너뜀).
 import Anthropic from 'npm:@anthropic-ai/sdk'
 
 const CORS_HEADERS = {
@@ -42,6 +46,70 @@ function detectPlatform(url: string) {
 interface PostMeta {
   caption: string
   imageUrl: string | null
+  /** 인스타그램 위치 태그 — 게시자가 직접 지정한 값이라 가장 믿을 만하다 */
+  locationName?: string | null
+}
+
+interface Place {
+  name: string
+  address: string
+  lat: number | null
+  lng: number | null
+  category: string
+  url: string
+  source: 'INSTAGRAM' | 'AI'
+}
+
+// ── 네이버 지역 검색 (place-search 함수와 같은 규격) ───────────────
+// Edge Function은 파일 단위로 배포돼서 공유가 안 되므로 필요한 만큼만 옮겨 왔다.
+
+const PLACE_ENDPOINT = 'https://naverapihub.apigw.ntruss.com/search/v1/local'
+
+function stripTags(value: string | undefined) {
+  return (value ?? '').replace(/<[^>]*>/g, '').trim()
+}
+
+function toCoord(raw: unknown, max: number): number | null {
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value === 0) return null
+  const degrees = Math.abs(value) >= 1_000_000 ? value / 10_000_000 : value
+  if (!Number.isFinite(degrees) || Math.abs(degrees) > max || degrees === 0) return null
+  return Number(degrees.toFixed(7))
+}
+
+/** 검색어로 장소 한 곳을 찾는다. 실패하면 null (분석 결과는 그대로 돌려준다). */
+async function findPlace(query: string, source: Place['source']): Promise<Place | null> {
+  const id = Deno.env.get('NAVER_CLIENT_ID')
+  const secret = Deno.env.get('NAVER_CLIENT_SECRET')
+  if (!id || !secret) return null
+  try {
+    const res = await fetchWithTimeout(
+      `${PLACE_ENDPOINT}?query=${encodeURIComponent(query)}&display=1`,
+      { headers: { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret } },
+      8000,
+    )
+    if (!res.ok) {
+      console.error('place lookup failed:', res.status, (await res.text()).slice(0, 200))
+      return null
+    }
+    const data = await res.json()
+    const item = Array.isArray(data?.items) ? data.items[0] : null
+    if (!item) return null
+    const name = stripTags(item.title)
+    if (!name) return null
+    return {
+      name,
+      address: stripTags(item.roadAddress) || stripTags(item.address),
+      lat: toCoord(item.mapy, 90),
+      lng: toCoord(item.mapx, 180),
+      category: stripTags(item.category),
+      url: `https://map.naver.com/p/search/${encodeURIComponent(name)}`,
+      source,
+    }
+  } catch (err) {
+    console.error('place lookup error:', err)
+    return null
+  }
 }
 
 /** YouTube/TikTok: 공개 oEmbed에서 제목(=캡션)과 썸네일을 가져온다. */
@@ -194,7 +262,11 @@ async function fetchInstagramApifyMeta(url: string): Promise<PostMeta | null> {
       post.childPosts?.[0]?.displayUrl ??
       null
     if (!caption && !imageUrl) return null
-    return { caption, imageUrl: typeof imageUrl === 'string' ? imageUrl : null }
+    return {
+      caption,
+      imageUrl: typeof imageUrl === 'string' ? imageUrl : null,
+      locationName: typeof post.locationName === 'string' ? post.locationName : null,
+    }
   } catch (err) {
     console.error('apify error:', err)
     return null
@@ -227,7 +299,11 @@ async function fetchInstagramMeta(url: string): Promise<PostMeta | null> {
   ]) {
     const meta = await attempt(url)
     if (isUsefulCaption(meta?.caption)) {
-      return { caption: meta!.caption, imageUrl: meta!.imageUrl ?? fallback?.imageUrl ?? null }
+      return {
+        caption: meta!.caption,
+        imageUrl: meta!.imageUrl ?? fallback?.imageUrl ?? null,
+        locationName: meta!.locationName ?? fallback?.locationName ?? null,
+      }
     }
     if (meta && !fallback && (meta.caption || meta.imageUrl)) fallback = meta
   }
@@ -258,13 +334,18 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
 {
   "title": "카드 제목",
   "categories": ["..."],
-  "memo": "간단한 메모"
+  "memo": "간단한 메모",
+  "place_query": "지도에서 찾을 검색어"
 }
 
 규칙:
 - title: 한국어로 20자 이내. 장소나 가게 이름이 있으면 꼭 포함하고, 뭘 하는 컨텐츠인지 한눈에 보이게.
 - categories: 사용자가 준 카테고리 목록 중에서만 고르세요 (복수 가능, 맞는 게 없으면 빈 배열).
 - memo: 한두 문장. 위치·메뉴·팁 등 나중에 다시 볼 때 유용한 핵심 정보만. 캡션에 정보가 없으면 빈 문자열.
+- place_query: 실제로 갈 수 있는 장소가 나오면 지도 검색에 쓸 "지역명 + 가게/장소 이름"을 쓰세요
+  (예: "속초 중앙시장 만석닭강정"). 가게 이름을 모르면 지역과 종류만이라도 쓰고,
+  특정 장소가 없는 컨텐츠(집에서 하는 요리, 온라인 등)면 빈 문자열로 두세요.
+  추측으로 지어내지 마세요 — 캡션이나 이미지에 근거가 있을 때만 씁니다.
 - 광고/해시태그 나열은 무시하고 실제 내용만 반영하세요.`
 
 Deno.serve(async (req) => {
@@ -326,16 +407,26 @@ Deno.serve(async (req) => {
   }
   if (!responseText) return json(502, { error: 'AI analysis failed' })
 
+  let draft: Record<string, unknown>
   try {
-    const draft = parseDraftJson(responseText)
-    return json(200, {
-      title: typeof draft.title === 'string' ? draft.title.trim() : '',
-      categories: Array.isArray(draft.categories)
-        ? draft.categories.filter((c: unknown) => typeof c === 'string' && categories.includes(c))
-        : [],
-      memo: typeof draft.memo === 'string' ? draft.memo.trim() : '',
-    })
+    draft = parseDraftJson(responseText)
   } catch {
     return json(502, { error: 'AI returned an unexpected format' })
   }
+
+  // 장소 찾기: 인스타 위치 태그가 있으면 그걸 먼저 쓰고(게시자가 직접 지정),
+  // 없으면 AI가 캡션에서 뽑은 검색어를 쓴다. 실패해도 초안은 그대로 돌려준다.
+  const tagged = meta.locationName?.trim()
+  const guessed = typeof draft.place_query === 'string' ? draft.place_query.trim() : ''
+  const lookup = tagged || guessed
+  const place = lookup ? await findPlace(lookup, tagged ? 'INSTAGRAM' : 'AI') : null
+
+  return json(200, {
+    title: typeof draft.title === 'string' ? draft.title.trim() : '',
+    categories: Array.isArray(draft.categories)
+      ? draft.categories.filter((c: unknown) => typeof c === 'string' && categories.includes(c))
+      : [],
+    memo: typeof draft.memo === 'string' ? draft.memo.trim() : '',
+    places: place ? [place] : [],
+  })
 })
