@@ -77,11 +77,20 @@ function toCoord(raw: unknown, max: number): number | null {
   return Number(degrees.toFixed(7))
 }
 
-/** 검색어로 장소 한 곳을 찾는다. 실패하면 null (분석 결과는 그대로 돌려준다). */
-async function findPlace(query: string, source: Place['source']): Promise<Place | null> {
+/**
+ * 검색어로 장소 한 곳을 찾는다.
+ * 실패해도 분석 결과는 그대로 돌려주되, 왜 못 찾았는지 debug에 남겨
+ * 프론트에서 바로 확인할 수 있게 한다.
+ */
+async function findPlace(
+  query: string,
+  source: Place['source'],
+): Promise<{ place: Place | null; debug: string }> {
   const id = Deno.env.get('NAVER_CLIENT_ID')
   const secret = Deno.env.get('NAVER_CLIENT_SECRET')
-  if (!id || !secret) return null
+  if (!id || !secret) {
+    return { place: null, debug: `'${query}' 검색 못 함 — 네이버 시크릿이 등록되어 있지 않음` }
+  }
   try {
     const res = await fetchWithTimeout(
       `${PLACE_ENDPOINT}?query=${encodeURIComponent(query)}&display=1`,
@@ -89,26 +98,30 @@ async function findPlace(query: string, source: Place['source']): Promise<Place 
       8000,
     )
     if (!res.ok) {
-      console.error('place lookup failed:', res.status, (await res.text()).slice(0, 200))
-      return null
+      const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 160)
+      console.error('place lookup failed:', res.status, body)
+      return { place: null, debug: `'${query}' 검색 실패 — ${res.status} ${body}` }
     }
     const data = await res.json()
     const item = Array.isArray(data?.items) ? data.items[0] : null
-    if (!item) return null
-    const name = stripTags(item.title)
-    if (!name) return null
+    const name = item ? stripTags(item.title) : ''
+    if (!name) return { place: null, debug: `'${query}' 검색 결과 없음` }
     return {
-      name,
-      address: stripTags(item.roadAddress) || stripTags(item.address),
-      lat: toCoord(item.mapy, 90),
-      lng: toCoord(item.mapx, 180),
-      category: stripTags(item.category),
-      url: `https://map.naver.com/p/search/${encodeURIComponent(name)}`,
-      source,
+      place: {
+        name,
+        address: stripTags(item.roadAddress) || stripTags(item.address),
+        lat: toCoord(item.mapy, 90),
+        lng: toCoord(item.mapx, 180),
+        category: stripTags(item.category),
+        url: `https://map.naver.com/p/search/${encodeURIComponent(name)}`,
+        source,
+      },
+      debug: '',
     }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
     console.error('place lookup error:', err)
-    return null
+    return { place: null, debug: `'${query}' 검색 오류 — ${message}` }
   }
 }
 
@@ -419,7 +432,9 @@ Deno.serve(async (req) => {
   const tagged = meta.locationName?.trim()
   const guessed = typeof draft.place_query === 'string' ? draft.place_query.trim() : ''
   const lookup = tagged || guessed
-  const place = lookup ? await findPlace(lookup, tagged ? 'INSTAGRAM' : 'AI') : null
+  const found = lookup
+    ? await findPlace(lookup, tagged ? 'INSTAGRAM' : 'AI')
+    : { place: null, debug: 'AI가 캡션에서 장소를 찾지 못했어요 (place_query 비어 있음)' }
 
   return json(200, {
     title: typeof draft.title === 'string' ? draft.title.trim() : '',
@@ -427,6 +442,7 @@ Deno.serve(async (req) => {
       ? draft.categories.filter((c: unknown) => typeof c === 'string' && categories.includes(c))
       : [],
     memo: typeof draft.memo === 'string' ? draft.memo.trim() : '',
-    places: place ? [place] : [],
+    places: found.place ? [found.place] : [],
+    place_debug: found.debug,
   })
 })

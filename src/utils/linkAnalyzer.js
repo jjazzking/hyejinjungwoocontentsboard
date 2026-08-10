@@ -99,6 +99,7 @@ export async function analyzeCaption(caption, url, categoryOptions = []) {
     categories: ai.categories ?? [],
     memo: ai.memo ?? '',
     places: ai.places ?? [],
+    place_debug: ai.place_debug ?? '',
   }
 }
 
@@ -120,6 +121,7 @@ export async function analyzeLink(url, categoryOptions = []) {
       photo_urls: [],
       categories: ai.categories ?? [],
       places: ai.places ?? [],
+    place_debug: ai.place_debug ?? '',
       memo: ai.memo ?? '',
     }
   }
