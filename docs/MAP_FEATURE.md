@@ -196,18 +196,33 @@ alter table public.contents
   - 조사 중 *"AI NAVER API ▶ 지도 API 신규 이용 신청 차단"* 공지가 보였는데,
     구버전을 닫고 신규 Maps로 유도하는 내용으로 보임 — 가입 화면에서 확인 필요
 
-### 인증 헤더 (구현 메모)
+### 호출 규격 (구현 메모)
 
-발급 경로에 따라 헤더 이름이 다를 수 있어서, `place-search` 함수는 아래 조합을 순서대로
-시도하고 성공한 것을 기억해 재사용합니다. 실제로 어느 조합이 동작하는지는 Edge Function
-로그(`place-search: … 조합으로 동작합니다`)에서 확인할 수 있습니다.
+NAVER API HUB 개발 가이드에서 확인한 공통 설정:
 
-| 엔드포인트 | 헤더 |
-|---|---|
-| `openapi.naver.com/v1/search/local.json` | `X-Naver-Client-Id` / `X-Naver-Client-Secret` |
-| `naveropenapi.apigw.ntruss.com/v1/search/local.json` | `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY` |
+- **호스트**: `https://naverapihub.apigw.ntruss.com`
+- **헤더**: `X-NCP-APIGW-API-KEY-ID` (Client ID) / `X-NCP-APIGW-API-KEY` (Client Secret)
+- 검색 API는 **GET**. `Content-Type`은 POST 방식(검색어 트렌드·쇼핑 인사이트)에서만 사용
 
-동작하는 조합이 확인되면 나머지는 지워서 단순화할 것.
+확인된 실패:
+
+- `naveropenapi.apigw.ntruss.com/v1/search/local.json` → **404 `URL not found`**
+  (게이트웨이가 응답 = 호스트는 유효하나 경로 없음). 후보에서 제외
+
+지역 검색의 하위 경로는 아직 미확정이라 `place-search` 함수가 아래 순서로 시도하고
+성공한 조합을 기억한다. 확정되면 나머지 후보는 지워서 단순화할 것.
+
+| # | 경로 | 헤더 |
+|---|---|---|
+| 1 | `/search/v1/local.json` | NCP |
+| 2 | `/search/v1/local` | NCP |
+| 3 | `/v1/search/local.json` | NCP |
+| 4 | `/search/local.json` | NCP |
+| 5 | `openapi.naver.com/v1/search/local.json` | `X-Naver-Client-*` (구 방식 키 대비) |
+| 6 | 위 주소 | NCP |
+
+실패하면 각 조합의 응답 코드·본문 일부가 **카드 폼 화면에 그대로 표시**된다
+(Edge Function 로그에도 `place-search:` 로 남는다).
 
 ### 구현할 때 쓸 구체적인 사실들
 

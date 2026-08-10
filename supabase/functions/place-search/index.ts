@@ -103,21 +103,33 @@ function toPlace(item: NaverItem): Place | null {
   }
 }
 
-// 발급 경로(NAVER API HUB / 구 개발자센터)에 따라 호스트·경로·헤더가 달라서
-// 가능한 조합을 순서대로 시도한다. 한 번 성공하면 그 조합만 계속 쓴다.
-//
-// naveropenapi.apigw.ntruss.com/v1/search/local.json 은 실제 호출에서
-// 404 "URL not found" 가 확인되어 후보에서 제외했다.
-const HUB = 'https://naverapihub.apigw.ntruss.com/search/v1/local'
+/**
+ * NAVER API HUB 공통 설정 (개발 가이드 확인 완료)
+ *   호스트 : https://naverapihub.apigw.ntruss.com
+ *   헤더   : X-NCP-APIGW-API-KEY-ID / X-NCP-APIGW-API-KEY
+ *   검색 API는 GET 방식
+ *
+ * 지역 검색의 하위 경로만 확실하지 않아 유력한 후보를 순서대로 시도하고,
+ * 성공한 조합을 기억해 재사용한다. 구 개발자센터 엔드포인트는 맨 뒤에 남겨
+ * 예전 방식으로 발급한 키도 동작하게 해 두었다.
+ *
+ * naveropenapi.apigw.ntruss.com/v1/search/local.json 은 실제 호출에서
+ * 404 "URL not found" 가 확인되어 후보에서 제외했다.
+ */
+const HUB = 'https://naverapihub.apigw.ntruss.com'
 const OPENAPI = 'https://openapi.naver.com/v1/search/local.json'
 
 function candidates(id: string, secret: string) {
-  const naver = { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret }
   const ncp = { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret }
+  const naver = { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret }
+  const hubPaths = [
+    '/search/v1/local.json',
+    '/search/v1/local',
+    '/v1/search/local.json',
+    '/search/local.json',
+  ]
   return [
-    { label: 'hub.json+ncp', url: `${HUB}.json`, headers: ncp },
-    { label: 'hub+ncp', url: HUB, headers: ncp },
-    { label: 'hub.json+naver', url: `${HUB}.json`, headers: naver },
+    ...hubPaths.map((path) => ({ label: `hub${path}`, url: `${HUB}${path}`, headers: ncp })),
     { label: 'openapi+naver', url: OPENAPI, headers: naver },
     { label: 'openapi+ncp', url: OPENAPI, headers: ncp },
   ]
