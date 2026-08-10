@@ -124,40 +124,52 @@ function candidates(id: string, secret: string) {
 // 성공한 조합의 label — 웜 인스턴스에서는 탐색을 건너뛴다
 let preferred: string | null = null
 
-async function searchNaver(query: string): Promise<NaverItem[] | null> {
+interface SearchResult {
+  items: NaverItem[] | null
+  /** 실패했을 때 화면에 보여줄 짧은 원인 (조합별 응답 요약) */
+  detail: string
+}
+
+async function searchNaver(query: string): Promise<SearchResult> {
   const id = Deno.env.get('NAVER_CLIENT_ID')
   const secret = Deno.env.get('NAVER_CLIENT_SECRET')
   if (!id || !secret) {
-    console.error('place-search: NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 시크릿이 없습니다')
-    return null
+    const detail = 'NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 시크릿이 등록되어 있지 않습니다'
+    console.error(`place-search: ${detail}`)
+    return { items: null, detail }
   }
 
   const all = candidates(id, secret)
   const ordered = preferred ? [...all].sort((a) => (a.label === preferred ? -1 : 1)) : all
   const params = `?query=${encodeURIComponent(query)}&display=5`
+  const failures: string[] = []
 
   for (const attempt of ordered) {
     try {
       const res = await fetch(`${attempt.url}${params}`, { headers: attempt.headers })
       if (!res.ok) {
-        console.error(`place-search: ${attempt.label} 실패`, res.status, (await res.text()).slice(0, 200))
+        const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 160)
+        console.error(`place-search: ${attempt.label} 실패`, res.status, body)
+        failures.push(`${attempt.label} → ${res.status} ${body}`)
         continue
       }
       const data = await res.json()
       if (!Array.isArray(data?.items)) {
         console.error(`place-search: ${attempt.label} 응답 형식이 예상과 다름`)
+        failures.push(`${attempt.label} → 200이지만 items 배열이 없음`)
         continue
       }
       if (preferred !== attempt.label) {
         preferred = attempt.label
         console.log(`place-search: ${attempt.label} 조합으로 동작합니다`)
       }
-      return data.items as NaverItem[]
+      return { items: data.items as NaverItem[], detail: '' }
     } catch (err) {
       console.error(`place-search: ${attempt.label} 오류`, err)
+      failures.push(`${attempt.label} → ${err instanceof Error ? err.message : String(err)}`)
     }
   }
-  return null
+  return { items: null, detail: failures.join(' / ') }
 }
 
 Deno.serve(async (req) => {
@@ -174,8 +186,10 @@ Deno.serve(async (req) => {
   const query = typeof body.query === 'string' ? body.query.trim() : ''
   if (!query) return json(400, { error: 'query is required' })
 
-  const items = await searchNaver(query)
-  if (!items) return json(502, { error: 'place search failed' })
+  // 실패해도 200으로 돌려주고 detail을 함께 보낸다 —
+  // 로그를 뒤지지 않아도 화면에서 바로 원인을 볼 수 있게 하기 위해서다.
+  const { items, detail } = await searchNaver(query)
+  if (!items) return json(200, { places: [], failed: true, detail })
 
   const places = items.map(toPlace).filter((p): p is Place => p !== null)
   return json(200, { places })
