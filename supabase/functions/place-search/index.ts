@@ -104,36 +104,12 @@ function toPlace(item: NaverItem): Place | null {
 }
 
 /**
- * NAVER API HUB 공통 설정 (개발 가이드 확인 완료)
- *   호스트 : https://naverapihub.apigw.ntruss.com
- *   헤더   : X-NCP-APIGW-API-KEY-ID / X-NCP-APIGW-API-KEY
- *   검색 API는 GET 방식
- *
- * 지역 검색의 하위 경로만 확실하지 않아 유력한 후보를 순서대로 시도하고,
- * 성공한 조합을 기억해 재사용한다. 구 개발자센터 엔드포인트는 맨 뒤에 남겨
- * 예전 방식으로 발급한 키도 동작하게 해 두었다.
- *
- * naveropenapi.apigw.ntruss.com/v1/search/local.json 은 실제 호출에서
- * 404 "URL not found" 가 확인되어 후보에서 제외했다.
+ * NAVER API HUB — 지역 검색 결과 조회 (개발 가이드 기준)
+ *   GET https://naverapihub.apigw.ntruss.com/search/v1/local
+ *   헤더: X-NCP-APIGW-API-KEY-ID(Client ID) / X-NCP-APIGW-API-KEY(Client Secret)
+ *   하루 호출 한도 25,000회
  */
-const HUB = 'https://naverapihub.apigw.ntruss.com'
-const OPENAPI = 'https://openapi.naver.com/v1/search/local.json'
-
-function candidates(id: string, secret: string) {
-  const ncp = { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret }
-  const naver = { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret }
-  const hubPaths = [
-    '/search/v1/local.json',
-    '/search/v1/local',
-    '/v1/search/local.json',
-    '/search/local.json',
-  ]
-  return [
-    ...hubPaths.map((path) => ({ label: `hub${path}`, url: `${HUB}${path}`, headers: ncp })),
-    { label: 'openapi+naver', url: OPENAPI, headers: naver },
-    { label: 'openapi+ncp', url: OPENAPI, headers: ncp },
-  ]
-}
+const ENDPOINT = 'https://naverapihub.apigw.ntruss.com/search/v1/local'
 
 /** 응답에서 결과 배열을 꺼낸다 (경로에 따라 감싸는 모양이 다를 수 있어 방어적으로). */
 function extractItems(data: unknown): NaverItem[] | null {
@@ -145,12 +121,9 @@ function extractItems(data: unknown): NaverItem[] | null {
   return null
 }
 
-// 성공한 조합의 label — 웜 인스턴스에서는 탐색을 건너뛴다
-let preferred: string | null = null
-
 interface SearchResult {
   items: NaverItem[] | null
-  /** 실패했을 때 화면에 보여줄 짧은 원인 (조합별 응답 요약) */
+  /** 실패했을 때 화면에 보여줄 짧은 원인 */
   detail: string
 }
 
@@ -163,39 +136,29 @@ async function searchNaver(query: string): Promise<SearchResult> {
     return { items: null, detail }
   }
 
-  const all = candidates(id, secret)
-  const ordered = preferred ? [...all].sort((a) => (a.label === preferred ? -1 : 1)) : all
-  const params = `?query=${encodeURIComponent(query)}&display=5`
-  const failures: string[] = []
-
-  for (const attempt of ordered) {
-    try {
-      const res = await fetch(`${attempt.url}${params}`, { headers: attempt.headers })
-      if (!res.ok) {
-        const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 160)
-        console.error(`place-search: ${attempt.label} 실패`, res.status, body)
-        failures.push(`${attempt.label} → ${res.status} ${body}`)
-        continue
-      }
-      const data = await res.json()
-      const items = extractItems(data)
-      if (!items) {
-        const shape = JSON.stringify(data).replace(/\s+/g, ' ').slice(0, 160)
-        console.error(`place-search: ${attempt.label} 응답 형식이 예상과 다름`, shape)
-        failures.push(`${attempt.label} → 200인데 결과 배열이 없음: ${shape}`)
-        continue
-      }
-      if (preferred !== attempt.label) {
-        preferred = attempt.label
-        console.log(`place-search: ${attempt.label} 조합으로 동작합니다`)
-      }
-      return { items, detail: '' }
-    } catch (err) {
-      console.error(`place-search: ${attempt.label} 오류`, err)
-      failures.push(`${attempt.label} → ${err instanceof Error ? err.message : String(err)}`)
+  const url = `${ENDPOINT}?query=${encodeURIComponent(query)}&display=5`
+  try {
+    const res = await fetch(url, {
+      headers: { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret },
+    })
+    if (!res.ok) {
+      const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 200)
+      console.error('place-search: 실패', res.status, body)
+      return { items: null, detail: `${res.status} ${body}` }
     }
+    const data = await res.json()
+    const items = extractItems(data)
+    if (!items) {
+      const shape = JSON.stringify(data).replace(/\s+/g, ' ').slice(0, 200)
+      console.error('place-search: 응답 형식이 예상과 다름', shape)
+      return { items: null, detail: `200인데 결과 배열이 없음: ${shape}` }
+    }
+    return { items, detail: '' }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    console.error('place-search: 오류', err)
+    return { items: null, detail }
   }
-  return { items: null, detail: failures.join(' / ') }
 }
 
 Deno.serve(async (req) => {
