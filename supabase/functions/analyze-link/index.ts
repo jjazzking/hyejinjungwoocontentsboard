@@ -1,8 +1,10 @@
 // AI 링크 분석 Edge Function.
 //
-// POST { url, categories: string[] }
+// POST { url?, caption?, categories: string[] }
 //  → 게시물의 캡션·썸네일을 서버에서 수집하고 Claude로 분석해
 //    { title, categories, memo } 카드 초안을 돌려준다.
+//  → caption이 함께 오면 수집을 건너뛰고 그 텍스트를 바로 분석한다
+//    (인스타그램이 서버 수집을 막을 때 사용자가 캡션을 직접 붙여넣는 경로).
 //
 // Anthropic API 키는 Supabase 시크릿(ANTHROPIC_API_KEY)으로만 보관한다 —
 // 프론트엔드/저장소에는 절대 넣지 않는다. 배포 방법은 SUPABASE_SETUP.md 6번 참고.
@@ -197,7 +199,7 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) return json(500, { error: 'ANTHROPIC_API_KEY secret is not set' })
 
-  let body: { url?: string; categories?: string[] }
+  let body: { url?: string; caption?: string; categories?: string[] }
   try {
     body = await req.json()
   } catch {
@@ -205,12 +207,15 @@ Deno.serve(async (req) => {
   }
 
   const url = body.url?.trim()
-  if (!url) return json(400, { error: 'url is required' })
-  const platform = detectPlatform(url)
-  if (platform === 'NONE') return json(400, { error: 'unsupported platform' })
+  const pastedCaption = typeof body.caption === 'string' ? body.caption.trim() : ''
+  if (!url && !pastedCaption) return json(400, { error: 'url or caption is required' })
+  const platform = url ? detectPlatform(url) : 'NONE'
+  if (!pastedCaption && platform === 'NONE') return json(400, { error: 'unsupported platform' })
   const categories = Array.isArray(body.categories) ? body.categories.filter(Boolean) : []
 
-  const meta = await fetchPostMeta(url, platform)
+  const meta = pastedCaption
+    ? { caption: pastedCaption, imageUrl: null }
+    : await fetchPostMeta(url!, platform)
   if (!meta?.caption && !meta?.imageUrl) {
     return json(422, { error: 'could not read the post (login-only or deleted?)' })
   }

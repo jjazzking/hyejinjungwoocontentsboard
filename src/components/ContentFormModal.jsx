@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { uploadPhoto } from '../utils/uploadPhoto.js'
+import { analyzeCaption } from '../utils/linkAnalyzer.js'
 
 const EMPTY_FORM = {
   title: '',
@@ -38,6 +39,8 @@ export default function ContentFormModal({
   const [form, setForm] = useState(EMPTY_FORM)
   const [newCategory, setNewCategory] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [aiCaption, setAiCaption] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
 
   useEffect(() => {
     if (initial) {
@@ -82,6 +85,24 @@ export default function ContentFormModal({
       categories: prev.categories.includes(added) ? prev.categories : [...prev.categories, added],
     }))
     setNewCategory('')
+  }
+
+  // 붙여넣은 캡션을 AI로 분석해서 제목·카테고리·메모를 채운다
+  const handleAiFill = async () => {
+    setAiBusy(true)
+    const draft = await analyzeCaption(aiCaption, form.reference_url, categoryOptions)
+    setAiBusy(false)
+    if (!draft) {
+      window.alert('AI 분석에 실패했어요. 잠시 후 다시 시도해 주세요.')
+      return
+    }
+    setForm((prev) => ({
+      ...prev,
+      title: draft.title || prev.title,
+      memo: draft.memo || prev.memo,
+      categories: [...new Set([...prev.categories, ...draft.categories])],
+    }))
+    setAiCaption('')
   }
 
   // 기기에서 고른 사진들을 Storage에 올리고 URL 목록에 덧붙인다
@@ -137,6 +158,31 @@ export default function ContentFormModal({
         </h2>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* 캡션 붙여넣기 → AI 자동 작성 (인스타 등에서 서버 수집이 막혔을 때의 경로) */}
+          {isSupabaseConfigured && (
+            <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/50 p-3">
+              <label htmlFor="cf-ai-caption" className={labelClass}>
+                ✨ AI 자동 작성 — 게시물 글(캡션)을 붙여넣으면 제목·카테고리·메모를 채워줘요
+              </label>
+              <textarea
+                id="cf-ai-caption"
+                rows={2}
+                value={aiCaption}
+                onChange={(e) => setAiCaption(e.target.value)}
+                placeholder="인스타그램 게시물의 글을 복사해서 여기에 붙여넣기"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={handleAiFill}
+                disabled={aiBusy || !aiCaption.trim()}
+                className="mt-2 rounded-full bg-rose-400 px-4 py-1.5 text-xs font-medium text-white shadow transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {aiBusy ? '🤖 분석 중…' : '🤖 AI로 채우기'}
+              </button>
+            </div>
+          )}
+
           <div>
             <label htmlFor="cf-title" className={labelClass}>
               제목 *
