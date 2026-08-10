@@ -103,22 +103,34 @@ function toPlace(item: NaverItem): Place | null {
   }
 }
 
+// 발급 경로(NAVER API HUB / 구 개발자센터)에 따라 호스트·경로·헤더가 달라서
+// 가능한 조합을 순서대로 시도한다. 한 번 성공하면 그 조합만 계속 쓴다.
+//
+// naveropenapi.apigw.ntruss.com/v1/search/local.json 은 실제 호출에서
+// 404 "URL not found" 가 확인되어 후보에서 제외했다.
+const HUB = 'https://naverapihub.apigw.ntruss.com/search/v1/local'
 const OPENAPI = 'https://openapi.naver.com/v1/search/local.json'
-const APIGW = 'https://naveropenapi.apigw.ntruss.com/v1/search/local.json'
 
-/**
- * 발급 경로에 따라 헤더 이름이 달라서(개발자센터 vs NAVER API HUB)
- * 가능한 조합을 순서대로 시도한다. 한 번 성공하면 그 조합만 계속 쓴다.
- */
 function candidates(id: string, secret: string) {
   const naver = { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret }
   const ncp = { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret }
   return [
+    { label: 'hub.json+ncp', url: `${HUB}.json`, headers: ncp },
+    { label: 'hub+ncp', url: HUB, headers: ncp },
+    { label: 'hub.json+naver', url: `${HUB}.json`, headers: naver },
     { label: 'openapi+naver', url: OPENAPI, headers: naver },
-    { label: 'apigw+ncp', url: APIGW, headers: ncp },
     { label: 'openapi+ncp', url: OPENAPI, headers: ncp },
-    { label: 'apigw+naver', url: APIGW, headers: naver },
   ]
+}
+
+/** 응답에서 결과 배열을 꺼낸다 (경로에 따라 감싸는 모양이 다를 수 있어 방어적으로). */
+function extractItems(data: unknown): NaverItem[] | null {
+  const root = data as Record<string, unknown> | null
+  if (!root || typeof root !== 'object') return null
+  for (const value of [root.items, (root.result as Record<string, unknown>)?.items, root.places]) {
+    if (Array.isArray(value)) return value as NaverItem[]
+  }
+  return null
 }
 
 // 성공한 조합의 label — 웜 인스턴스에서는 탐색을 건너뛴다
@@ -154,16 +166,18 @@ async function searchNaver(query: string): Promise<SearchResult> {
         continue
       }
       const data = await res.json()
-      if (!Array.isArray(data?.items)) {
-        console.error(`place-search: ${attempt.label} 응답 형식이 예상과 다름`)
-        failures.push(`${attempt.label} → 200이지만 items 배열이 없음`)
+      const items = extractItems(data)
+      if (!items) {
+        const shape = JSON.stringify(data).replace(/\s+/g, ' ').slice(0, 160)
+        console.error(`place-search: ${attempt.label} 응답 형식이 예상과 다름`, shape)
+        failures.push(`${attempt.label} → 200인데 결과 배열이 없음: ${shape}`)
         continue
       }
       if (preferred !== attempt.label) {
         preferred = attempt.label
         console.log(`place-search: ${attempt.label} 조합으로 동작합니다`)
       }
-      return { items: data.items as NaverItem[], detail: '' }
+      return { items, detail: '' }
     } catch (err) {
       console.error(`place-search: ${attempt.label} 오류`, err)
       failures.push(`${attempt.label} → ${err instanceof Error ? err.message : String(err)}`)
