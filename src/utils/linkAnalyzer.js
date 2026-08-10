@@ -94,7 +94,12 @@ export async function analyzeCaption(caption, url, categoryOptions = []) {
     categories: categoryOptions,
   })
   if (!ai) return null
-  return { title: ai.title, categories: ai.categories ?? [], memo: ai.memo ?? '' }
+  return {
+    title: ai.title,
+    categories: ai.categories ?? [],
+    memo: ai.memo ?? '',
+    places: ai.places ?? [],
+  }
 }
 
 /**
@@ -114,6 +119,7 @@ export async function analyzeLink(url, categoryOptions = []) {
       reference_platform: platform,
       photo_urls: [],
       categories: ai.categories ?? [],
+      places: ai.places ?? [],
       memo: ai.memo ?? '',
     }
   }
@@ -131,6 +137,7 @@ export async function analyzeLink(url, categoryOptions = []) {
     reference_platform: platform,
     photo_urls: [],
     categories: guessCategories(`${title} ${author ?? ''}`),
+    places: [],
     memo: author ? `${author} 게시물 보고 저장했어요 ✨` : '',
   }
 }
