@@ -21,6 +21,8 @@ export default function PlacePicker({ value = [], onChange, inputClass, labelCla
   const [results, setResults] = useState(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  // 검색이 실패했을 때 서버가 알려준 원인 (설정 문제 진단용)
+  const [detail, setDetail] = useState('')
 
   const addPlace = (place) => {
     // 같은 이름이 이미 있으면 중복 추가하지 않는다
@@ -29,6 +31,7 @@ export default function PlacePicker({ value = [], onChange, inputClass, labelCla
     setQuery('')
     setResults(null)
     setMessage('')
+    setDetail('')
   }
 
   const removePlace = (index) => onChange(value.filter((_, i) => i !== index))
@@ -38,15 +41,16 @@ export default function PlacePicker({ value = [], onChange, inputClass, labelCla
     if (!trimmed) return
     setBusy(true)
     setMessage('')
-    const found = await searchPlaces(trimmed)
+    setDetail('')
+    const { places, detail: why } = await searchPlaces(trimmed)
     setBusy(false)
-    if (!found) {
-      setResults(null)
+    setResults(places)
+    if (why) {
       setMessage('검색에 실패했어요. 이름만 직접 추가할 수도 있어요.')
-      return
+      setDetail(why)
+    } else if (places.length === 0) {
+      setMessage('검색 결과가 없어요. 이름만 직접 추가할 수도 있어요.')
     }
-    setResults(found)
-    if (found.length === 0) setMessage('검색 결과가 없어요. 이름만 직접 추가할 수도 있어요.')
   }
 
   const addByName = () => {
@@ -154,6 +158,13 @@ export default function PlacePicker({ value = [], onChange, inputClass, labelCla
           >
             ＋ 이름만 추가
           </button>
+        </p>
+      )}
+
+      {/* 설정이 덜 됐을 때 원인을 그대로 보여준다 (로그를 열지 않아도 되게) */}
+      {detail && (
+        <p className="mt-1 break-words rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">
+          ⚠️ {detail}
         </p>
       )}
     </div>

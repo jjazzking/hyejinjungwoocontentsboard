@@ -161,9 +161,11 @@ Supabase 대시보드 → **Edge Functions** → **Secrets** 에 2개 추가:
 - Function name: `place-search`
 - 내용: [`supabase/functions/place-search/index.ts`](./supabase/functions/place-search/index.ts) 전체 붙여넣기
 
-발급 경로에 따라 인증 헤더 이름이 다를 수 있어서, 함수가 가능한 조합을 자동으로
-시도하고 성공한 것을 기억합니다. 잘 안 되면 **Edge Functions → place-search → Logs** 에서
-`place-search:` 로 시작하는 줄을 확인하세요.
+> 시크릿을 **등록한 뒤에** 함수를 배포하세요. 이미 떠 있는 함수에는 시크릿 변경이
+> 바로 반영되지 않을 수 있어서, 순서가 뒤바뀌었다면 함수를 한 번 더 배포하면 됩니다.
+
+검색이 안 되면 폼의 장소 칸에 실패 사유가 그대로 표시됩니다
+(**Edge Functions → place-search → Logs** 의 `place-search:` 줄에도 같은 내용이 남습니다).
 
 시크릿이 없거나 검색이 실패해도 장소 **이름만 직접 입력**해서 저장할 수 있습니다
 (좌표가 없을 뿐, 카드에는 그대로 표시돼요).

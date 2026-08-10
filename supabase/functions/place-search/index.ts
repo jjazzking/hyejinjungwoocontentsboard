@@ -103,61 +103,62 @@ function toPlace(item: NaverItem): Place | null {
   }
 }
 
-const OPENAPI = 'https://openapi.naver.com/v1/search/local.json'
-const APIGW = 'https://naveropenapi.apigw.ntruss.com/v1/search/local.json'
-
 /**
- * 발급 경로에 따라 헤더 이름이 달라서(개발자센터 vs NAVER API HUB)
- * 가능한 조합을 순서대로 시도한다. 한 번 성공하면 그 조합만 계속 쓴다.
+ * NAVER API HUB — 지역 검색 결과 조회 (개발 가이드 기준)
+ *   GET https://naverapihub.apigw.ntruss.com/search/v1/local
+ *   헤더: X-NCP-APIGW-API-KEY-ID(Client ID) / X-NCP-APIGW-API-KEY(Client Secret)
+ *   하루 호출 한도 25,000회
  */
-function candidates(id: string, secret: string) {
-  const naver = { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret }
-  const ncp = { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret }
-  return [
-    { label: 'openapi+naver', url: OPENAPI, headers: naver },
-    { label: 'apigw+ncp', url: APIGW, headers: ncp },
-    { label: 'openapi+ncp', url: OPENAPI, headers: ncp },
-    { label: 'apigw+naver', url: APIGW, headers: naver },
-  ]
+const ENDPOINT = 'https://naverapihub.apigw.ntruss.com/search/v1/local'
+
+/** 응답에서 결과 배열을 꺼낸다 (경로에 따라 감싸는 모양이 다를 수 있어 방어적으로). */
+function extractItems(data: unknown): NaverItem[] | null {
+  const root = data as Record<string, unknown> | null
+  if (!root || typeof root !== 'object') return null
+  for (const value of [root.items, (root.result as Record<string, unknown>)?.items, root.places]) {
+    if (Array.isArray(value)) return value as NaverItem[]
+  }
+  return null
 }
 
-// 성공한 조합의 label — 웜 인스턴스에서는 탐색을 건너뛴다
-let preferred: string | null = null
+interface SearchResult {
+  items: NaverItem[] | null
+  /** 실패했을 때 화면에 보여줄 짧은 원인 */
+  detail: string
+}
 
-async function searchNaver(query: string): Promise<NaverItem[] | null> {
+async function searchNaver(query: string): Promise<SearchResult> {
   const id = Deno.env.get('NAVER_CLIENT_ID')
   const secret = Deno.env.get('NAVER_CLIENT_SECRET')
   if (!id || !secret) {
-    console.error('place-search: NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 시크릿이 없습니다')
-    return null
+    const detail = 'NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 시크릿이 등록되어 있지 않습니다'
+    console.error(`place-search: ${detail}`)
+    return { items: null, detail }
   }
 
-  const all = candidates(id, secret)
-  const ordered = preferred ? [...all].sort((a) => (a.label === preferred ? -1 : 1)) : all
-  const params = `?query=${encodeURIComponent(query)}&display=5`
-
-  for (const attempt of ordered) {
-    try {
-      const res = await fetch(`${attempt.url}${params}`, { headers: attempt.headers })
-      if (!res.ok) {
-        console.error(`place-search: ${attempt.label} 실패`, res.status, (await res.text()).slice(0, 200))
-        continue
-      }
-      const data = await res.json()
-      if (!Array.isArray(data?.items)) {
-        console.error(`place-search: ${attempt.label} 응답 형식이 예상과 다름`)
-        continue
-      }
-      if (preferred !== attempt.label) {
-        preferred = attempt.label
-        console.log(`place-search: ${attempt.label} 조합으로 동작합니다`)
-      }
-      return data.items as NaverItem[]
-    } catch (err) {
-      console.error(`place-search: ${attempt.label} 오류`, err)
+  const url = `${ENDPOINT}?query=${encodeURIComponent(query)}&display=5`
+  try {
+    const res = await fetch(url, {
+      headers: { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret },
+    })
+    if (!res.ok) {
+      const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 200)
+      console.error('place-search: 실패', res.status, body)
+      return { items: null, detail: `${res.status} ${body}` }
     }
+    const data = await res.json()
+    const items = extractItems(data)
+    if (!items) {
+      const shape = JSON.stringify(data).replace(/\s+/g, ' ').slice(0, 200)
+      console.error('place-search: 응답 형식이 예상과 다름', shape)
+      return { items: null, detail: `200인데 결과 배열이 없음: ${shape}` }
+    }
+    return { items, detail: '' }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    console.error('place-search: 오류', err)
+    return { items: null, detail }
   }
-  return null
 }
 
 Deno.serve(async (req) => {
@@ -174,8 +175,10 @@ Deno.serve(async (req) => {
   const query = typeof body.query === 'string' ? body.query.trim() : ''
   if (!query) return json(400, { error: 'query is required' })
 
-  const items = await searchNaver(query)
-  if (!items) return json(502, { error: 'place search failed' })
+  // 실패해도 200으로 돌려주고 detail을 함께 보낸다 —
+  // 로그를 뒤지지 않아도 화면에서 바로 원인을 볼 수 있게 하기 위해서다.
+  const { items, detail } = await searchNaver(query)
+  if (!items) return json(200, { places: [], failed: true, detail })
 
   const places = items.map(toPlace).filter((p): p is Place => p !== null)
   return json(200, { places })

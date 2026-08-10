@@ -9,21 +9,29 @@ export const isPlaceSearchAvailable = isSupabaseConfigured
 
 /**
  * 검색어로 장소 후보를 찾는다.
- * 성공하면 Place 배열, 실패하면 null (호출한 쪽에서 안내 문구 표시).
+ * → { places: Place[], detail?: string }
+ * 검색 자체가 실패하면 places는 빈 배열이고 detail에 원인이 담긴다
+ * (설정이 덜 됐거나 네이버 응답이 이상한 경우 — 화면에 그대로 보여준다).
  */
 export async function searchPlaces(query) {
   const trimmed = query?.trim()
-  if (!trimmed || !isSupabaseConfigured) return null
+  if (!trimmed) return { places: [] }
+  if (!isSupabaseConfigured) return { places: [], detail: '공유 DB 모드에서만 검색할 수 있어요' }
   try {
     const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: 'timeout' }), 15000))
     const { data, error } = await Promise.race([
       supabase.functions.invoke('place-search', { body: { query: trimmed } }),
       timeout,
     ])
-    if (error || !Array.isArray(data?.places)) return null
-    return data.places
-  } catch {
-    return null
+    if (error) {
+      return { places: [], detail: `함수 호출 실패: ${error.message ?? error}` }
+    }
+    if (!Array.isArray(data?.places)) {
+      return { places: [], detail: '응답 형식이 예상과 달라요' }
+    }
+    return { places: data.places, detail: data.failed ? data.detail : undefined }
+  } catch (err) {
+    return { places: [], detail: `오류: ${err?.message ?? err}` }
   }
 }
 

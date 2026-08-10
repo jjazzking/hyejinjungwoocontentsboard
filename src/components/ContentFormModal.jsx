@@ -4,6 +4,10 @@ import { uploadPhoto } from '../utils/uploadPhoto.js'
 import { analyzeCaption } from '../utils/linkAnalyzer.js'
 import PlacePicker from './PlacePicker.jsx'
 
+// 캡션 붙여넣기 → AI 자동 작성 영역을 숨겨둔다.
+// 지금은 안 쓰지만 나중에 다시 켤 수 있게 코드는 그대로 두고 이 값만 true로 바꾸면 된다.
+const SHOW_AI_CAPTION = false
+
 const EMPTY_FORM = {
   title: '',
   status: 'PLANNING',
@@ -163,7 +167,7 @@ export default function ContentFormModal({
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {/* 캡션 붙여넣기 → AI 자동 작성 (인스타 등에서 서버 수집이 막혔을 때의 경로) */}
-          {isSupabaseConfigured && (
+          {SHOW_AI_CAPTION && isSupabaseConfigured && (
             <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/50 p-3">
               <label htmlFor="cf-ai-caption" className={labelClass}>
                 ✨ AI 자동 작성 — 게시물 글(캡션)을 붙여넣으면 제목·카테고리·메모를 채워줘요
