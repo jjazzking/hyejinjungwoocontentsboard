@@ -10,18 +10,12 @@ const ContentMap = lazy(() => import('./ContentMap.jsx'))
 import { useClipboardSuggestion } from '../hooks/useClipboardSuggestion.js'
 import { useCategories } from '../hooks/useCategories.js'
 import { analyzeLink } from '../utils/linkAnalyzer.js'
+import { formatDay } from '../utils/date.js'
 
 const TABS = [
   { key: 'PLANNING', label: '할 것들', emoji: '🗓️' },
   { key: 'COMPLETED', label: '한 것들', emoji: '✅' },
 ]
-
-/** 'YYYY-MM-DD' → '7월 12일' */
-function formatDay(dateStr) {
-  const date = new Date(`${dateStr}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return dateStr
-  return `${date.getMonth() + 1}월 ${date.getDate()}일`
-}
 
 /**
  * 메인 대시보드.

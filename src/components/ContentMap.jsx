@@ -2,12 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import LeafletCanvas from './map/LeafletCanvas.jsx'
 import NaverCanvas from './map/NaverCanvas.jsx'
 import { useNaverMapsScript } from './map/useNaverMapsScript.js'
-
-function formatDate(dateStr) {
-  const date = new Date(`${dateStr}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return dateStr
-  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long' }).format(date)
-}
+import { formatDate } from '../utils/date.js'
 
 const isCoord = (value) => typeof value === 'number' && Number.isFinite(value)
 

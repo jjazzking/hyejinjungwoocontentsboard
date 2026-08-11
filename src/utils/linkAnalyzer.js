@@ -52,17 +52,13 @@ const FALLBACK_TITLE = {
 async function fetchOEmbed(platform, url) {
   const endpoint = OEMBED_ENDPOINT[platform]
   if (!endpoint) return null
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 5000)
   try {
-    const res = await fetch(endpoint(url), { signal: controller.signal })
+    const res = await fetch(endpoint(url), { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return null
     const data = await res.json()
     return data?.title ? data : null
   } catch {
     return null
-  } finally {
-    clearTimeout(timer)
   }
 }
 

@@ -1,16 +1,11 @@
 import MediaEmbed from './embeds/MediaEmbed.jsx'
 import PhotoCarousel from './PhotoCarousel.jsx'
+import { formatDate } from '../utils/date.js'
 
 const PLATFORM_LABEL = {
   INSTAGRAM: { name: 'Instagram', className: 'bg-gradient-to-r from-fuchsia-500 to-orange-400 text-white' },
   YOUTUBE: { name: 'YouTube', className: 'bg-red-600 text-white' },
   TIKTOK: { name: 'TikTok', className: 'bg-neutral-900 text-white' },
-}
-
-function formatDate(dateStr) {
-  const date = new Date(`${dateStr}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return dateStr
-  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long' }).format(date)
 }
 
 function EditActions({ isCompleted, moving, onMoveStart, onToggleStatus, onEdit, onDelete }) {

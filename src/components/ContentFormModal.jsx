@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { uploadPhoto } from '../utils/uploadPhoto.js'
-import { analyzeCaption } from '../utils/linkAnalyzer.js'
+import { analyzeCaption, detectPlatform } from '../utils/linkAnalyzer.js'
 import PlacePicker from './PlacePicker.jsx'
 
 // 캡션 붙여넣기 → AI 자동 작성 영역을 숨겨둔다.
@@ -18,14 +18,6 @@ const EMPTY_FORM = {
   categories: [],
   places: [],
   memo: '',
-}
-
-/** reference_url에서 플랫폼을 자동으로 추측한다 (수동 선택으로 덮어쓸 수 있음). */
-function guessPlatform(url) {
-  if (/instagram\.com/i.test(url)) return 'INSTAGRAM'
-  if (/youtube\.com|youtu\.be/i.test(url)) return 'YOUTUBE'
-  if (/tiktok\.com/i.test(url)) return 'TIKTOK'
-  return 'NONE'
 }
 
 /**
@@ -76,7 +68,8 @@ export default function ContentFormModal({
 
   const setUrl = (e) => {
     const url = e.target.value
-    setForm((prev) => ({ ...prev, reference_url: url, reference_platform: guessPlatform(url) }))
+    // 플랫폼은 링크에서 자동으로 추측한다 (수동 선택으로 덮어쓸 수 있음)
+    setForm((prev) => ({ ...prev, reference_url: url, reference_platform: detectPlatform(url) }))
   }
 
   const toggleCategory = (name) => {
