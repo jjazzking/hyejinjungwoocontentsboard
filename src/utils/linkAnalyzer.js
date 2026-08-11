@@ -121,7 +121,7 @@ export async function analyzeLink(url, categoryOptions = []) {
       photo_urls: [],
       categories: ai.categories ?? [],
       places: ai.places ?? [],
-    place_debug: ai.place_debug ?? '',
+      place_debug: ai.place_debug ?? '',
       memo: ai.memo ?? '',
     }
   }
