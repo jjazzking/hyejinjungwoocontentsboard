@@ -227,6 +227,7 @@ export default function Dashboard({
           >
             <ContentMap
               items={filtered}
+              categories={categories}
               editable={editMode}
               onEdit={(content) => setModal({ mode: 'edit', content })}
             />
