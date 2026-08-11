@@ -25,6 +25,7 @@ src/
     ContentFormModal.jsx      카드 추가·수정 폼 (AI 자동 채움 진입점)
     CategoryFilter.jsx        '할 일' 탭의 태그별 필터 칩
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
+    ContentMap.jsx            지도 보기 (Leaflet, lazy 로드) — 핀·미니 카드
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
@@ -91,6 +92,8 @@ SUPABASE_SETUP.md             공유 DB · Edge Function · 네이버 키 설정
 
 - **Claude** — `analyze-link` 함수 안에서만 호출
 - **Apify** — 인스타 캡션 수집 (실패 시 oEmbed 폴백)
+- **지도 렌더링** — Leaflet + OpenStreetMap 타일. 계정·키가 필요 없다.
+  타일 제공자를 바꾸려면 `ContentMap.jsx`의 `TILE_URL` / `TILE_ATTRIBUTION`만 고치면 된다.
 - **네이버 지역 검색** — NCP **NAVER API HUB** 경유.
   `GET https://naverapihub.apigw.ntruss.com/search/v1/local`,
   헤더 `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY`.
