@@ -29,6 +29,8 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # 네이버 지도 Client ID (브라우저 노출 전제). 없으면 OpenStreetMap으로 그려진다
+          VITE_NAVER_MAP_CLIENT_ID: ${{ secrets.VITE_NAVER_MAP_CLIENT_ID }}
       # Pages 소스가 'Deploy from a branch'로 남아 있으면 빌드되지 않은 소스가
       # 그대로 배포되어 흰 화면이 되므로, 'GitHub Actions' 방식으로 강제 전환한다.
       - name: Switch Pages source to GitHub Actions

@@ -25,7 +25,11 @@ src/
     ContentFormModal.jsx      카드 추가·수정 폼 (AI 자동 채움 진입점)
     CategoryFilter.jsx        '할 일' 탭의 태그별 필터 칩
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
-    ContentMap.jsx            지도 보기 (Leaflet, lazy 로드) — 핀·미니 카드
+    ContentMap.jsx            지도 (lazy 로드) — 핀 계산·미니 카드·위치 없는 카드 안내
+    map/NaverCanvas.jsx       네이버 지도 v3로 핀 그리기
+    map/LeafletCanvas.jsx     OSM 폴백으로 핀 그리기 (같은 props)
+    map/useNaverMapsScript.js 네이버 스크립트 로더 (off/loading/ready/failed)
+    map/pin.js                두 지도가 공유하는 핀 마크업
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
@@ -51,8 +55,10 @@ SUPABASE_SETUP.md             공유 DB · Edge Function · 네이버 키 설정
 **시크릿은 절대 프론트엔드·저장소·GitHub Secrets에 넣지 않는다.**
 저장소와 배포 사이트가 공개이므로 `ANTHROPIC_API_KEY`, `APIFY_TOKEN`,
 `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`은 **Supabase Edge Function 시크릿 전용**이다.
-`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`만 GitHub Secrets에 두며, anon 키는
-설계상 공개되어도 안전하다 (RLS로 보호).
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` / `VITE_NAVER_MAP_CLIENT_ID`만
+GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 제한으로 보호되므로
+브라우저에 노출되는 것이 설계상 정상이다. **지도 Client ID와 검색 API의
+`NAVER_CLIENT_SECRET`은 전혀 다른 키다** — 후자는 절대 프론트에 두지 않는다.
 
 **이중 모드를 항상 유지한다.** `isSupabaseConfigured`가 false면 앱은 localStorage로
 완전히 동작해야 한다. 새 기능을 넣을 때 Supabase 전용 UI는 이 플래그로 감싼다.
@@ -92,8 +98,12 @@ SUPABASE_SETUP.md             공유 DB · Edge Function · 네이버 키 설정
 
 - **Claude** — `analyze-link` 함수 안에서만 호출
 - **Apify** — 인스타 캡션 수집 (실패 시 oEmbed 폴백)
-- **지도 렌더링** — Leaflet + OpenStreetMap 타일. 계정·키가 필요 없다.
-  타일 제공자를 바꾸려면 `ContentMap.jsx`의 `TILE_URL` / `TILE_ATTRIBUTION`만 고치면 된다.
+- **지도 렌더링** — 네이버 지도 v3가 1순위, OpenStreetMap(Leaflet)이 폴백.
+  `VITE_NAVER_MAP_CLIENT_ID`가 있고 스크립트 인증까지 성공해야 네이버로 그린다.
+  스크립트는 `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=…`
+  (구 파라미터 `ncpClientId`는 폐기됐다). 인증 실패는 예외가 아니라 전역 콜백
+  `window.navermap_authFailure`로 오므로 그걸 잡아 폴백한다.
+  두 캔버스는 `{ pins, selectedKey, onSelect, className }` props가 같아야 한다.
 - **네이버 지역 검색** — NCP **NAVER API HUB** 경유.
   `GET https://naverapihub.apigw.ntruss.com/search/v1/local`,
   헤더 `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY`.
