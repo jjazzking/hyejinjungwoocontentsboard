@@ -171,8 +171,9 @@ Supabase 대시보드 → **Edge Functions** → **Secrets** 에 2개 추가:
 
 `analyze-link` 함수도 같은 네이버 키를 써서 **링크만으로 장소까지 자동으로 찾아줍니다.**
 
-- 인스타그램 **위치 태그**가 있으면 그 이름으로 (가장 정확)
-- 없으면 AI가 캡션에서 뽑은 검색어로
+- AI가 **캡션에서 뽑은 검색어**로 먼저 찾고
+- 결과가 없으면 인스타그램 **위치 태그**로 한 번 더 (태그는 동네·건물 단위로
+  대충 찍힌 경우가 많아 폴백으로만 씁니다)
 
 자동으로 찾은 장소에는 **"⚠️ 확인해 주세요"** 배지가 붙고, 폼에서 **✓ 맞아요** 로 확정하거나
 **🔍 다시 찾기** 로 직접 검색할 수 있습니다.
@@ -183,3 +184,55 @@ Supabase 대시보드 → **Edge Functions** → **Secrets** 에 2개 추가:
 
 시크릿이 없거나 검색이 실패해도 장소 **이름만 직접 입력**해서 저장할 수 있습니다
 (좌표가 없을 뿐, 카드에는 그대로 표시돼요).
+
+---
+
+## 8. 지도를 네이버 지도로 바꾸기 (선택)
+
+지도는 기본적으로 **OpenStreetMap**으로 그려집니다 (계정·키가 필요 없음).
+아래를 설정하면 **네이버 지도**로 자동 전환되고, 키가 없거나 인증에 실패하면
+다시 OpenStreetMap으로 떨어지므로 지도가 비는 일은 없습니다.
+
+> ⚠️ 여기서 쓰는 키는 **7번의 검색 API 키와 다른 키**입니다.
+> 검색은 `NAVER API HUB`, 지도는 `Maps` — 상품이 따로예요.
+
+### 8-1. NCP에서 Maps 신청
+
+1. [NAVER Cloud Platform 콘솔](https://console.ncloud.com) → **Services** → **Maps**
+2. **이용 신청** — 지도는 **결제수단(카드) 등록을 요구**합니다
+   (Web Dynamic Map 월 1,000만 건까지 무료지만 등록 자체는 필요)
+3. **Application 등록** → **Web Dynamic Map** 선택
+
+### 8-2. 서비스 URL 등록 ⚠️ 빠뜨리기 쉬움
+
+Application 설정의 **Web 서비스 URL**에 보드가 열리는 주소를 **전부** 넣습니다.
+
+```
+https://jjazzking.github.io
+http://localhost:5173
+```
+
+여기에 없는 주소에서 열면 지도가 **인증 실패**로 뜹니다.
+(그 경우 지도 아래에 `⚠️ 네이버 지도 인증 실패` 안내가 표시됩니다.)
+
+### 8-3. Client ID를 GitHub 시크릿으로 등록
+
+발급된 **Client ID**를 저장소 → **Settings** → **Secrets and variables** →
+**Actions** → **New repository secret** 으로 넣습니다.
+
+| 이름 | 값 |
+| --- | --- |
+| `VITE_NAVER_MAP_CLIENT_ID` | Maps Application의 Client ID |
+
+> 이 값은 **브라우저에 노출되는 것이 정상**입니다. 지도 JS를 브라우저가 직접
+> 불러오기 때문이고, 8-2의 서비스 URL 제한으로 보호합니다.
+> **검색 API의 `NAVER_CLIENT_SECRET`은 절대 GitHub에 넣지 마세요** — 그건 Supabase 시크릿 전용입니다.
+
+등록한 뒤 `main`에 아무 커밋이나 올리면(또는 Actions에서 workflow를 수동 실행하면)
+새 빌드에 키가 주입되고 지도가 네이버로 바뀝니다.
+
+로컬에서 확인하려면 `.env` 에 같은 이름으로 넣으면 됩니다.
+
+```bash
+VITE_NAVER_MAP_CLIENT_ID=여기에_Client_ID
+```

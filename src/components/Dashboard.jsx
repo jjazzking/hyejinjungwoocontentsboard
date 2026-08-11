@@ -15,12 +15,6 @@ const TABS = [
   { key: 'COMPLETED', label: '한 것들', emoji: '✅' },
 ]
 
-// 탭 안에서 전환하는 보기 방식 — 필터는 두 보기에 똑같이 적용된다
-const VIEWS = [
-  { key: 'list', label: '목록', emoji: '📋' },
-  { key: 'map', label: '지도', emoji: '🗺️' },
-]
-
 /** 'YYYY-MM-DD' → '7월 12일' */
 function formatDay(dateStr) {
   const date = new Date(`${dateStr}T00:00:00`)
@@ -58,8 +52,6 @@ export default function Dashboard({
   // 탭별 보기 필터: 할 것들은 태그, 한 것들은 날짜('YYYY-MM-DD')
   const [categoryFilter, setCategoryFilter] = useState(null)
   const [dateFilter, setDateFilter] = useState(null)
-  // 'list' | 'map' — 탭을 바꿔도 유지해서 할 것/한 것 지도를 번갈아 볼 수 있게 한다
-  const [view, setView] = useState('list')
 
   const { suggestion, resolveSuggestion } = useClipboardSuggestion(contents)
   const { categories, addCategory } = useCategories(contents)
@@ -205,33 +197,6 @@ export default function Dashboard({
         </p>
       )}
 
-      {/* 목록 ↔ 지도 전환 */}
-      {!loading && (
-        <div className="mb-4 flex justify-end">
-          <div className="inline-flex rounded-full bg-white p-0.5 shadow-sm ring-1 ring-neutral-900/5">
-            {VIEWS.map((item) => {
-              const isActive = view === item.key
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => {
-                    setView(item.key)
-                    setMovingId(null)
-                  }}
-                  aria-pressed={isActive}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                    isActive ? 'bg-rose-400 text-white shadow' : 'text-neutral-500 hover:text-neutral-800'
-                  }`}
-                >
-                  {item.emoji} {item.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       {/* 탭별 보기 필터: 할 것들 = 태그 칩, 한 것들 = 달력 */}
       {!loading &&
         (activeTab === 'PLANNING' ? (
@@ -245,6 +210,24 @@ export default function Dashboard({
         <p className="mb-4 text-center text-sm text-rose-500">
           🚚 이동할 위치의 카드를 누르면 그 앞으로 들어가요 · <kbd className="rounded bg-rose-50 px-1.5 py-0.5 text-xs">ESC</kbd> 또는 ☰을 다시 누르면 취소
         </p>
+      )}
+
+      {/* 지도: 목록 위에 항상 떠 있고, 위의 필터가 핀에도 그대로 적용된다 */}
+      {!loading && (
+        <Suspense
+          fallback={
+            <div className="mb-6 flex h-80 flex-col items-center justify-center gap-3 rounded-2xl bg-white/60 text-center sm:h-96">
+              <span className="animate-pulse text-4xl">🗺️</span>
+              <p className="text-sm text-neutral-400">지도를 불러오는 중…</p>
+            </div>
+          }
+        >
+          <ContentMap
+            items={filtered}
+            editable={editMode}
+            onEdit={(content) => setModal({ mode: 'edit', content })}
+          />
+        </Suspense>
       )}
 
       {/* 필터가 걸려 있을 때 지금 무엇을 보고 있는지 알려주는 한 줄 */}
@@ -262,21 +245,6 @@ export default function Dashboard({
           <span className="animate-pulse text-4xl">💌</span>
           <p className="text-sm text-neutral-400">보드를 불러오는 중…</p>
         </div>
-      ) : view === 'map' ? (
-        <Suspense
-          fallback={
-            <div className="flex h-80 flex-col items-center justify-center gap-3 rounded-2xl bg-white/60 text-center">
-              <span className="animate-pulse text-4xl">🗺️</span>
-              <p className="text-sm text-neutral-400">지도를 불러오는 중…</p>
-            </div>
-          }
-        >
-          <ContentMap
-            items={filtered}
-            editable={editMode}
-            onEdit={(content) => setModal({ mode: 'edit', content })}
-          />
-        </Suspense>
       ) : filtered.length === 0 && hasFilter ? (
         <div className="flex flex-col items-center gap-3 py-16 text-center">
           <span className="text-4xl">🔍</span>
