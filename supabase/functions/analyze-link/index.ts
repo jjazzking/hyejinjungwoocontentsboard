@@ -46,7 +46,10 @@ function detectPlatform(url: string) {
 interface PostMeta {
   caption: string
   imageUrl: string | null
-  /** 인스타그램 위치 태그 — 게시자가 직접 지정한 값이라 가장 믿을 만하다 */
+  /**
+   * 인스타그램 위치 태그. 게시자가 직접 지정한 값이지만 동네·건물 단위로 대충 찍힌
+   * 경우가 많아, 캡션에서 뽑은 검색어가 실패했을 때의 폴백으로만 쓴다.
+   */
   locationName?: string | null
 }
 
@@ -263,7 +266,8 @@ async function fetchInstagramApifyMeta(url: string): Promise<PostMeta | null> {
 
     const caption = [
       typeof post.caption === 'string' ? post.caption : '',
-      post.locationName ? `장소: ${post.locationName}` : '',
+      // 위치 태그는 동네·건물 단위로 대충 찍힌 경우가 많아, 참고용이라고 명시해서 넘긴다
+      post.locationName ? `게시물 위치 태그(부정확할 수 있음): ${post.locationName}` : '',
       post.ownerUsername ? `계정: @${post.ownerUsername}` : '',
     ]
       .filter(Boolean)
@@ -359,6 +363,9 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   (예: "속초 중앙시장 만석닭강정"). 가게 이름을 모르면 지역과 종류만이라도 쓰고,
   특정 장소가 없는 컨텐츠(집에서 하는 요리, 온라인 등)면 빈 문자열로 두세요.
   추측으로 지어내지 마세요 — 캡션이나 이미지에 근거가 있을 때만 씁니다.
+  ★ 캡션 본문에 적힌 가게 이름을 가장 우선하세요. "게시물 위치 태그"는 동네·건물처럼
+  대충 찍힌 경우가 많으니, 캡션에 가게 이름이 있으면 태그 대신 그걸 쓰고
+  태그는 지역명을 보태는 정도로만 참고하세요.
 - 광고/해시태그 나열은 무시하고 실제 내용만 반영하세요.`
 
 Deno.serve(async (req) => {
@@ -427,14 +434,28 @@ Deno.serve(async (req) => {
     return json(502, { error: 'AI returned an unexpected format' })
   }
 
-  // 장소 찾기: 인스타 위치 태그가 있으면 그걸 먼저 쓰고(게시자가 직접 지정),
-  // 없으면 AI가 캡션에서 뽑은 검색어를 쓴다. 실패해도 초안은 그대로 돌려준다.
-  const tagged = meta.locationName?.trim()
+  // 장소 찾기: AI가 캡션에서 뽑은 검색어를 먼저 쓴다.
+  // 게시물의 위치 태그는 실제 가게가 아니라 동네·건물처럼 대충 찍힌 경우가 많아서
+  // 캡션 쪽이 안 나올 때의 폴백으로만 쓴다. 실패해도 초안은 그대로 돌려준다.
+  const tagged = meta.locationName?.trim() ?? ''
   const guessed = typeof draft.place_query === 'string' ? draft.place_query.trim() : ''
-  const lookup = tagged || guessed
-  const found = lookup
-    ? await findPlace(lookup, tagged ? 'INSTAGRAM' : 'AI')
-    : { place: null, debug: 'AI가 캡션에서 장소를 찾지 못했어요 (place_query 비어 있음)' }
+
+  const attempts: Array<{ query: string; source: Place['source'] }> = []
+  if (guessed) attempts.push({ query: guessed, source: 'AI' })
+  // 위치 태그가 캡션 검색어와 사실상 같으면 같은 검색을 두 번 하지 않는다
+  if (tagged && tagged !== guessed) attempts.push({ query: tagged, source: 'INSTAGRAM' })
+
+  let found: { place: Place | null; debug: string } = {
+    place: null,
+    debug: 'AI가 캡션에서 장소를 찾지 못했어요 (place_query 비어 있음)',
+  }
+  const reasons: string[] = []
+  for (const attempt of attempts) {
+    found = await findPlace(attempt.query, attempt.source)
+    if (found.place) break
+    reasons.push(found.debug)
+  }
+  if (!found.place && reasons.length > 0) found = { place: null, debug: reasons.join(' / ') }
 
   return json(200, {
     title: typeof draft.title === 'string' ? draft.title.trim() : '',
