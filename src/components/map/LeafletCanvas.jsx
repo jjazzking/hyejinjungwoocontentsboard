@@ -4,10 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import { PIN_ANCHOR_Y, PIN_SIZE, pinHtml } from './pin.js'
 import {
   DISTRICT_STYLE,
-  MIN_ZOOM_SUBWAY,
-  SUBWAY_CORE,
-  SUBWAY_HALO,
-  loadMapOverlays,
+  loadDistrictBoundaries,
   stillCovered,
   visibleDistricts,
 } from './overlays.js'
@@ -24,9 +21,8 @@ const TILE_ATTRIBUTION =
 const DEFAULT_CENTER = [37.5665, 126.978]
 const DEFAULT_ZOOM = 11
 
-// 오버레이가 핀을 덮지 않도록 층을 나눈다 (Leaflet 기본: 타일 200 · 마커 600)
+// 경계선이 핀을 덮지 않도록 층을 나눈다 (Leaflet 기본: 타일 200 · 마커 600)
 const DISTRICT_PANE = 'cb-districts'
-const SUBWAY_PANE = 'cb-subway'
 
 function icon(color, done, active) {
   return L.divIcon({
@@ -41,15 +37,15 @@ export default function LeafletCanvas({
   pins,
   selectedKey,
   onSelect,
-  overlays,
+  showDistricts,
   onViewChange,
   className,
 }) {
   const containerRef = useRef(null)
   const markersRef = useRef(new Map())
   const [map, setMap] = useState(null)
-  // 오버레이 데이터(경계·노선)는 켤 때 한 번 받아서 들고 있는다
-  const [overlayData, setOverlayData] = useState(null)
+  // 경계선 데이터는 켤 때 한 번 받아서 들고 있는다
+  const [districts, setDistricts] = useState(null)
   // 경계선은 화면에 걸치는 것만 그리므로 지도를 움직일 때마다 다시 계산한다
   const [view, setView] = useState(null)
 
@@ -65,10 +61,8 @@ export default function LeafletCanvas({
     })
     L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(instance)
     instance.createPane(DISTRICT_PANE).style.zIndex = '350'
-    instance.createPane(SUBWAY_PANE).style.zIndex = '360'
-    // 배경 오버레이는 클릭을 먹지 않아야 핀·지도 조작이 막히지 않는다
+    // 경계선은 클릭을 먹지 않아야 핀·지도 조작이 막히지 않는다
     instance.getPane(DISTRICT_PANE).style.pointerEvents = 'none'
-    instance.getPane(SUBWAY_PANE).style.pointerEvents = 'none'
     setMap(instance)
     return () => {
       instance.remove()
@@ -140,21 +134,20 @@ export default function LeafletCanvas({
     }
   }, [pins, selectedKey])
 
-  // 오버레이를 하나라도 켜면 그때 데이터를 받는다
-  const wantsOverlay = overlays.districts || overlays.subway
+  // 경계를 켤 때 데이터를 받는다
   useEffect(() => {
-    if (!wantsOverlay || overlayData) return undefined
+    if (!showDistricts || districts) return undefined
     let alive = true
-    loadMapOverlays().then((data) => alive && setOverlayData(data))
+    loadDistrictBoundaries().then((data) => alive && setDistricts(data))
     return () => {
       alive = false
     }
-  }, [wantsOverlay, overlayData])
+  }, [showDistricts, districts])
 
   // 시·군·구 경계
   useEffect(() => {
-    if (!map || !overlayData || !overlays.districts) return undefined
-    const lines = visibleDistricts(overlayData.districts, view?.bounds, view?.zoom ?? 0)
+    if (!map || !districts || !showDistricts) return undefined
+    const lines = visibleDistricts(districts, view?.bounds, view?.zoom ?? 0)
     if (lines.length === 0) return undefined
     const layer = L.polyline(
       lines.map((line) => line.path),
@@ -163,34 +156,13 @@ export default function LeafletCanvas({
         color: DISTRICT_STYLE.color,
         weight: DISTRICT_STYLE.weight,
         opacity: DISTRICT_STYLE.opacity,
-        dashArray: DISTRICT_STYLE.dash.join(','),
+        lineCap: 'round',
+        lineJoin: 'round',
         interactive: false,
       },
     ).addTo(map)
     return () => layer.remove()
-  }, [map, overlayData, overlays.districts, view])
-
-  // 수도권 전철 노선
-  useEffect(() => {
-    if (!map || !overlayData || !overlays.subway) return undefined
-    if ((view?.zoom ?? 0) < MIN_ZOOM_SUBWAY) return undefined
-    const group = L.layerGroup().addTo(map)
-    for (const line of overlayData.subway) {
-      // 후광 → 심 순서로 두 번 그려야 노선이 배경에서 떠오른다
-      for (const style of [SUBWAY_HALO, SUBWAY_CORE]) {
-        L.polyline(line.paths, {
-          pane: SUBWAY_PANE,
-          color: line.color,
-          weight: style.weight,
-          opacity: style.opacity,
-          lineCap: 'round',
-          lineJoin: 'round',
-          interactive: false,
-        }).addTo(group)
-      }
-    }
-    return () => group.remove()
-  }, [map, overlayData, overlays.subway, view?.zoom])
+  }, [map, districts, showDistricts, view])
 
   return <div ref={containerRef} role="application" aria-label="장소 지도" className={className} />
 }

@@ -2,10 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { PIN_ANCHOR_Y, PIN_SIZE, pinHtml } from './pin.js'
 import {
   DISTRICT_STYLE,
-  MIN_ZOOM_SUBWAY,
-  SUBWAY_CORE,
-  SUBWAY_HALO,
-  loadMapOverlays,
+  loadDistrictBoundaries,
   stillCovered,
   visibleDistricts,
 } from './overlays.js'
@@ -30,7 +27,7 @@ export default function NaverCanvas({
   selectedKey,
   onSelect,
   onFailure,
-  overlays,
+  showDistricts,
   onViewChange,
   className,
 }) {
@@ -38,7 +35,7 @@ export default function NaverCanvas({
   const markersRef = useRef(new Map())
   const failedRef = useRef(false)
   const [map, setMap] = useState(null)
-  const [overlayData, setOverlayData] = useState(null)
+  const [districts, setDistricts] = useState(null)
   const [view, setView] = useState(null)
 
   const reportFailure = useCallback(
@@ -197,21 +194,20 @@ export default function NaverCanvas({
     }
   }, [pins, selectedKey, reportFailure])
 
-  // 오버레이를 하나라도 켜면 그때 데이터를 받는다
-  const wantsOverlay = overlays.districts || overlays.subway
+  // 경계를 켤 때 데이터를 받는다
   useEffect(() => {
-    if (!wantsOverlay || overlayData) return undefined
+    if (!showDistricts || districts) return undefined
     let alive = true
-    loadMapOverlays().then((data) => alive && setOverlayData(data))
+    loadDistrictBoundaries().then((data) => alive && setDistricts(data))
     return () => {
       alive = false
     }
-  }, [wantsOverlay, overlayData])
+  }, [showDistricts, districts])
 
   // 시·군·구 경계
   useEffect(() => {
-    if (!map || !overlayData || !overlays.districts) return undefined
-    const lines = visibleDistricts(overlayData.districts, view?.bounds, view?.zoom ?? 0)
+    if (!map || !districts || !showDistricts) return undefined
+    const lines = visibleDistricts(districts, view?.bounds, view?.zoom ?? 0)
     if (lines.length === 0) return undefined
 
     const drawn = []
@@ -225,7 +221,8 @@ export default function NaverCanvas({
             strokeColor: DISTRICT_STYLE.color,
             strokeWeight: DISTRICT_STYLE.weight,
             strokeOpacity: DISTRICT_STYLE.opacity,
-            strokeStyle: 'shortdash',
+            strokeLineCap: 'round',
+            strokeLineJoin: 'round',
             clickable: false,
             zIndex: 1,
           }),
@@ -242,49 +239,7 @@ export default function NaverCanvas({
         console.error('경계선 정리 실패(무시함):', error)
       }
     }
-  }, [map, overlayData, overlays.districts, view])
-
-  // 수도권 전철 노선
-  useEffect(() => {
-    if (!map || !overlayData || !overlays.subway) return undefined
-    if ((view?.zoom ?? 0) < MIN_ZOOM_SUBWAY) return undefined
-
-    const drawn = []
-    try {
-      const naver = window.naver
-      for (const line of overlayData.subway) {
-        for (const path of line.paths) {
-          const latLngs = path.map(([lat, lng]) => new naver.maps.LatLng(lat, lng))
-          // 후광 → 심 순서로 두 번 그려야 노선이 배경에서 떠오른다
-          ;[SUBWAY_HALO, SUBWAY_CORE].forEach((style, index) => {
-            drawn.push(
-              new naver.maps.Polyline({
-                map,
-                path: latLngs,
-                strokeColor: line.color,
-                strokeWeight: style.weight,
-                strokeOpacity: style.opacity,
-                strokeLineCap: 'round',
-                strokeLineJoin: 'round',
-                clickable: false,
-                zIndex: 2 + index,
-              }),
-            )
-          })
-        }
-      }
-    } catch (error) {
-      console.error('지하철 노선 그리기 실패(무시함):', error)
-    }
-
-    return () => {
-      try {
-        for (const polyline of drawn) polyline.setMap(null)
-      } catch (error) {
-        console.error('노선 정리 실패(무시함):', error)
-      }
-    }
-  }, [map, overlayData, overlays.subway, view?.zoom])
+  }, [map, districts, showDistricts, view])
 
   return <div ref={containerRef} role="application" aria-label="장소 지도" className={className} />
 }

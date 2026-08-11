@@ -18,23 +18,15 @@ function formatDate(dateStr) {
 
 const isCoord = (value) => typeof value === 'number' && Number.isFinite(value)
 
-const OVERLAY_STORAGE_KEY = 'couple-contents-board:map-overlays:v1'
-const DEFAULT_OVERLAYS = { districts: true, subway: true }
+const DISTRICTS_STORAGE_KEY = 'couple-contents-board:map-districts:v1'
 
-/** 오버레이 스위치는 켜고 끈 상태를 기억한다 (지도를 열 때마다 다시 끄면 귀찮다) */
-function loadOverlayPrefs() {
+/** 경계 스위치는 켜고 끈 상태를 기억한다 (지도를 열 때마다 다시 끄면 귀찮다) */
+function loadDistrictsPref() {
   try {
-    const saved = JSON.parse(localStorage.getItem(OVERLAY_STORAGE_KEY) ?? 'null')
-    if (saved && typeof saved === 'object') {
-      return {
-        districts: saved.districts !== false,
-        subway: saved.subway !== false,
-      }
-    }
+    return localStorage.getItem(DISTRICTS_STORAGE_KEY) !== 'off'
   } catch {
-    // 저장된 값이 깨져 있으면 기본값으로
+    return true
   }
-  return DEFAULT_OVERLAYS
 }
 
 /**
@@ -43,7 +35,7 @@ function loadOverlayPrefs() {
  * - 지도 엔진: 네이버 지도 키가 있고 인증에 성공하면 네이버, 아니면 OpenStreetMap
  * - 핀 색 = 태그(첫 번째 카테고리), 핀 모양 = 상태(할 것은 테두리만, 한 것은 꽉 채움)
  *   → 어떤 태그가 무슨 색인지는 지도 아래 범례에 나온다
- * - 배경 오버레이: 시·군·구 경계 · 수도권 전철 노선 (범례 줄에서 켜고 끈다)
+ * - 배경: 시·군·구 경계선 (범례 줄에서 켜고 끈다)
  * - 핀을 누르면 하단에 미니 카드가 뜨고, 편집 모드면 거기서 바로 수정할 수 있다
  * - 좌표가 없는 카드(이름만 저장한 장소, 장소 없는 카드)는 지도에 못 뜨므로
  *   아래에 "위치 없는 카드 N개"로 따로 안내한다
@@ -57,7 +49,7 @@ export default function ContentMap({ items, categories = [], editable = false, o
   const [selectedKey, setSelectedKey] = useState(null)
   // 스크립트는 멀쩡했지만 실제로 그리다가 깨진 경우 (인증 실패한 반쪽짜리 지도 등)
   const [naverBroken, setNaverBroken] = useState(false)
-  const [overlays, setOverlays] = useState(loadOverlayPrefs)
+  const [showDistricts, setShowDistricts] = useState(loadDistrictsPref)
   const [zoom, setZoom] = useState(null)
   const naverState = useNaverMapsScript()
   const useNaver = naverState === 'ready' && !naverBroken
@@ -111,11 +103,11 @@ export default function ContentMap({ items, categories = [], editable = false, o
   const handleNaverFailure = useCallback(() => setNaverBroken(true), [])
   const handleViewChange = useCallback((next) => setZoom(next), [])
 
-  const toggleOverlay = useCallback((key) => {
-    setOverlays((prev) => {
-      const next = { ...prev, [key]: !prev[key] }
+  const toggleDistricts = useCallback(() => {
+    setShowDistricts((prev) => {
+      const next = !prev
       try {
-        localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(next))
+        localStorage.setItem(DISTRICTS_STORAGE_KEY, next ? 'on' : 'off')
       } catch {
         // 저장 실패해도 이번 세션 동안은 그대로 동작한다
       }
@@ -161,7 +153,7 @@ export default function ContentMap({ items, categories = [], editable = false, o
           selectedKey={selectedKey}
           onSelect={handleSelect}
           onFailure={handleNaverFailure}
-          overlays={overlays}
+          showDistricts={showDistricts}
           onViewChange={handleViewChange}
           className="h-80 w-full bg-neutral-100 sm:h-96"
         />
@@ -242,7 +234,12 @@ export default function ContentMap({ items, categories = [], editable = false, o
         )}
       </div>
 
-      <MapLegend swatches={swatches} overlays={overlays} onToggle={toggleOverlay} zoom={zoom} />
+      <MapLegend
+        swatches={swatches}
+        showDistricts={showDistricts}
+        onToggleDistricts={toggleDistricts}
+        zoom={zoom}
+      />
 
       {/* 어떤 지도를 쓰고 있는지 — 네이버로 바뀌었는지 한눈에 알 수 있게 */}
       {!useNaver && (

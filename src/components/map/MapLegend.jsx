@@ -1,18 +1,18 @@
 import { MIN_ZOOM_DISTRICTS } from './overlays.js'
 
 /**
- * 지도 아래 범례 + 오버레이 스위치.
+ * 지도 아래 범례 + 시·군·구 경계 스위치.
  *
  * 지도 위에 띄우지 않고 아래에 붙인 이유: 지도 높이가 320px밖에 안 돼서
  * 떠 있는 패널이 핀을 가린다. 아래 줄이면 접었다 펴지 않아도 항상 다 보인다.
  *
  * - swatches: 지금 지도에 떠 있는 핀들의 태그와 색 [{ name, color }]
- * - overlays / onToggle: 시·군·구 경계 · 지하철 노선 스위치
+ * - showDistricts / onToggleDistricts: 시·군·구 경계 스위치
  * - zoom: 경계선이 배율 때문에 안 보이는 상황을 알려주기 위해 받는다 (없으면 안내 생략)
  */
-export default function MapLegend({ swatches, overlays, onToggle, zoom }) {
+export default function MapLegend({ swatches, showDistricts, onToggleDistricts, zoom }) {
   const districtsHidden =
-    overlays.districts && typeof zoom === 'number' && zoom < MIN_ZOOM_DISTRICTS
+    showDistricts && typeof zoom === 'number' && zoom < MIN_ZOOM_DISTRICTS
 
   const toggleClass = (isOn) =>
     `rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 transition-colors ${
@@ -50,25 +50,15 @@ export default function MapLegend({ swatches, overlays, onToggle, zoom }) {
           한 것
         </span>
 
-        {/* 배경 오버레이 스위치 */}
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => onToggle('districts')}
-            aria-pressed={overlays.districts}
-            className={toggleClass(overlays.districts)}
-          >
-            🗺️ 시·구 경계
-          </button>
-          <button
-            type="button"
-            onClick={() => onToggle('subway')}
-            aria-pressed={overlays.subway}
-            className={toggleClass(overlays.subway)}
-          >
-            🚇 지하철 노선
-          </button>
-        </div>
+        {/* 시·군·구 경계 스위치 */}
+        <button
+          type="button"
+          onClick={onToggleDistricts}
+          aria-pressed={showDistricts}
+          className={`ml-auto ${toggleClass(showDistricts)}`}
+        >
+          🗺️ 시·구 경계
+        </button>
       </div>
 
       {districtsHidden && (

@@ -26,12 +26,12 @@ src/
     CategoryFilter.jsx        '할 일' 탭의 태그별 필터 칩
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
     ContentMap.jsx            지도 (lazy 로드) — 핀 계산·범례·미니 카드·위치 없는 카드 안내
-    map/NaverCanvas.jsx       네이버 지도 v3로 핀·오버레이 그리기
-    map/LeafletCanvas.jsx     OSM 폴백으로 핀·오버레이 그리기 (같은 props)
+    map/NaverCanvas.jsx       네이버 지도 v3로 핀·경계선 그리기
+    map/LeafletCanvas.jsx     OSM 폴백으로 핀·경계선 그리기 (같은 props)
     map/useNaverMapsScript.js 네이버 스크립트 로더 (off/loading/ready/failed)
     map/pin.js                두 지도가 공유하는 핀 마크업 (태그 색 · 상태별 채움)
-    map/overlays.js           시·구 경계 / 지하철 오버레이 데이터 로더 · 스타일 · 화면 컬링
-    map/MapLegend.jsx         지도 아래 범례 + 오버레이 on/off 스위치
+    map/overlays.js           시·군·구 경계 데이터 로더 · 스타일 · 화면 컬링
+    map/MapLegend.jsx         지도 아래 범례 + 경계 on/off 스위치
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
@@ -46,10 +46,9 @@ src/
     uploadPhoto.js            Supabase Storage 업로드
   data/
     districtBoundaries.json   시·군·구 경계선 (생성물 — 직접 고치지 말 것)
-    subwayLines.json          수도권 전철 노선 (생성물 — 직접 고치지 말 것)
   lib/supabaseClient.js       설정 없으면 null → localStorage 모드
 scripts/
-  build-map-overlays.mjs      위 두 JSON을 공개 데이터에서 만들어 내는 스크립트
+  build-map-overlays.mjs      위 JSON을 공개 데이터에서 만들어 내는 스크립트
 supabase/
   schema.sql                  테이블 · RLS · 마이그레이션 SQL
   functions/analyze-link/     Claude로 링크 분석 + 장소 자동 검색
@@ -115,11 +114,10 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
   **네이버 호출은 전부 try/catch로 감싼다.** 인증이 실패하면 반쯤 죽은 지도 객체가 남고,
   정리 중 `destroy()`가 던진 예외가 올라가면 React가 트리를 내려서 화면이 하얘진다.
   실패하면 `onFailure`로 알려 OSM으로 넘기고, 마지막 방어선으로 `MapErrorBoundary`를 둔다.
-- **지도 오버레이 데이터** — 시·군·구 경계와 수도권 전철 노선은 **외부 API가 아니라
-  저장소에 넣어둔 JSON**(`src/data/`)이다. 런타임에 아무 데도 호출하지 않는다.
-  `node scripts/build-map-overlays.mjs`로 공개 데이터에서 다시 만들 수 있고,
-  경계선은 280KB라 오버레이를 처음 켤 때 동적 import로 따로 내려받는다.
-  경계선은 화면에 걸치는 것만 그린다 (전국을 다 얹으면 폴리라인이 2,000개가 넘는다).
+- **시·군·구 경계 데이터** — **외부 API가 아니라 저장소에 넣어둔 JSON**(`src/data/`)이다.
+  런타임에 아무 데도 호출하지 않는다. `node scripts/build-map-overlays.mjs`로 공개 데이터에서
+  다시 만들 수 있고, 510KB라 경계를 처음 켤 때 동적 import로 따로 내려받는다.
+  화면에 걸치는 것만, 배율 10 이상에서만 그린다 (전국을 다 얹으면 폴리라인이 2,000개가 넘는다).
   **JSON을 손으로 고치지 말고 스크립트를 고쳐서 다시 생성할 것.**
 - **네이버 지역 검색** — NCP **NAVER API HUB** 경유.
   `GET https://naverapihub.apigw.ntruss.com/search/v1/local`,
