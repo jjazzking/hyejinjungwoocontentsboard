@@ -10,37 +10,33 @@ body {
 }
 
 /*
- * 지도 핀 (ContentMap의 Leaflet divIcon).
+ * 지도 핀 (ContentMap의 Leaflet divIcon / 네이버 마커).
  * 물방울 모양: 한쪽 모서리만 각지게 두고 -45도 돌려서 뾰족한 끝이 아래를 향하게 한다.
+ *
+ * 색(태그별)과 채움 여부(할 것/한 것)는 pin.js가 인라인 스타일로 넣는다.
+ * 여기서는 어떤 배경 위에서도 핀이 떠 보이도록 흰 테 + 그림자만 공통으로 준다.
  */
 .cb-pin {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50% 50% 50% 0;
+  border-width: 4px;
+  border-style: solid;
   transform: rotate(-45deg);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  box-shadow:
+    0 0 0 1.5px rgb(255 255 255 / 0.95),
+    0 2px 5px rgb(0 0 0 / 0.45);
   transition: transform 0.15s ease;
 }
 
-/* 할 것 = 앰버색 빈 핀 (아직 안 간 곳) */
-.cb-pin-todo {
-  background: #fff;
-  border: 3px solid #f59e0b;
-}
-
-/* 한 것 = 로즈색 채운 핀 (다녀온 곳) */
-.cb-pin-done {
-  background: #fb7185;
-  border: 3px solid #fff;
-}
-
-/* 선택된 핀은 살짝 키우고 테를 둘러 눈에 띄게 */
+/* 선택된 핀은 키우고 자기 색으로 후광을 둘러 한눈에 찾게 */
 .cb-pin-active {
-  transform: rotate(-45deg) scale(1.35);
+  transform: rotate(-45deg) scale(1.4);
   box-shadow:
-    0 0 0 3px rgb(251 113 133 / 0.35),
-    0 2px 5px rgb(0 0 0 / 0.35);
+    0 0 0 1.5px rgb(255 255 255 / 0.95),
+    0 0 0 6px color-mix(in srgb, var(--cb-pin-color) 40%, transparent),
+    0 3px 7px rgb(0 0 0 / 0.45);
 }
 
 /* 지도 안 글씨가 본문 폰트보다 커 보이지 않도록 */

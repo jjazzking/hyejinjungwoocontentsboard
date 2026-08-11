@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import LeafletCanvas from './map/LeafletCanvas.jsx'
+import MapLegend from './map/MapLegend.jsx'
 import NaverCanvas from './map/NaverCanvas.jsx'
 import { useNaverMapsScript } from './map/useNaverMapsScript.js'
+import {
+  NO_CATEGORY_COLOR,
+  NO_CATEGORY_LABEL,
+  buildCategoryColorMap,
+  contentColor,
+} from '../utils/categoryColors.js'
 
 function formatDate(dateStr) {
   const date = new Date(`${dateStr}T00:00:00`)
@@ -11,24 +18,51 @@ function formatDate(dateStr) {
 
 const isCoord = (value) => typeof value === 'number' && Number.isFinite(value)
 
+const OVERLAY_STORAGE_KEY = 'couple-contents-board:map-overlays:v1'
+const DEFAULT_OVERLAYS = { districts: true, subway: true }
+
+/** 오버레이 스위치는 켜고 끈 상태를 기억한다 (지도를 열 때마다 다시 끄면 귀찮다) */
+function loadOverlayPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(OVERLAY_STORAGE_KEY) ?? 'null')
+    if (saved && typeof saved === 'object') {
+      return {
+        districts: saved.districts !== false,
+        subway: saved.subway !== false,
+      }
+    }
+  } catch {
+    // 저장된 값이 깨져 있으면 기본값으로
+  }
+  return DEFAULT_OVERLAYS
+}
+
 /**
  * 카드들의 장소를 지도에 핀으로 찍어 보여준다. 목록 위에 항상 떠 있다.
  *
  * - 지도 엔진: 네이버 지도 키가 있고 인증에 성공하면 네이버, 아니면 OpenStreetMap
- * - 핀 색: 할 것 = 앰버 빈 핀, 한 것 = 로즈 채운 핀
+ * - 핀 색 = 태그(첫 번째 카테고리), 핀 모양 = 상태(할 것은 테두리만, 한 것은 꽉 채움)
+ *   → 어떤 태그가 무슨 색인지는 지도 아래 범례에 나온다
+ * - 배경 오버레이: 시·군·구 경계 · 수도권 전철 노선 (범례 줄에서 켜고 끈다)
  * - 핀을 누르면 하단에 미니 카드가 뜨고, 편집 모드면 거기서 바로 수정할 수 있다
  * - 좌표가 없는 카드(이름만 저장한 장소, 장소 없는 카드)는 지도에 못 뜨므로
  *   아래에 "위치 없는 카드 N개"로 따로 안내한다
  *
  * items 는 Dashboard에서 이미 탭·태그·날짜 필터가 적용된 목록이라
  * 필터가 지도에도 그대로 반영된다.
+ * categories 는 **보드 전체**의 카테고리 목록 — 필터를 걸어도 태그 색이 안 바뀌게 하려면
+ * 지금 보이는 카드가 아니라 전체 목록을 기준으로 색을 나눠야 한다.
  */
-export default function ContentMap({ items, editable = false, onEdit }) {
+export default function ContentMap({ items, categories = [], editable = false, onEdit }) {
   const [selectedKey, setSelectedKey] = useState(null)
   // 스크립트는 멀쩡했지만 실제로 그리다가 깨진 경우 (인증 실패한 반쪽짜리 지도 등)
   const [naverBroken, setNaverBroken] = useState(false)
+  const [overlays, setOverlays] = useState(loadOverlayPrefs)
+  const [zoom, setZoom] = useState(null)
   const naverState = useNaverMapsScript()
   const useNaver = naverState === 'ready' && !naverBroken
+
+  const colorMap = useMemo(() => buildCategoryColorMap(categories), [categories])
 
   // 좌표가 있는 장소만 핀으로 편다 (카드 하나에 장소가 여러 개면 여러 핀)
   const pins = useMemo(() => {
@@ -36,11 +70,29 @@ export default function ContentMap({ items, editable = false, onEdit }) {
     for (const content of items) {
       ;(content.places ?? []).forEach((place, index) => {
         if (!isCoord(place.lat) || !isCoord(place.lng)) return
-        list.push({ key: `${content.id}-${index}`, lat: place.lat, lng: place.lng, place, content })
+        list.push({
+          key: `${content.id}-${index}`,
+          lat: place.lat,
+          lng: place.lng,
+          color: contentColor(content, colorMap),
+          place,
+          content,
+        })
       })
     }
     return list
-  }, [items])
+  }, [items, colorMap])
+
+  // 범례에는 지금 지도에 실제로 떠 있는 태그만 (등장 순서 유지)
+  const swatches = useMemo(() => {
+    const seen = new Map()
+    for (const pin of pins) {
+      const name = (pin.content.categories ?? []).find((c) => colorMap.has(c))
+      if (name) seen.set(name, colorMap.get(name))
+      else seen.set(NO_CATEGORY_LABEL, NO_CATEGORY_COLOR)
+    }
+    return [...seen.entries()].map(([name, color]) => ({ name, color }))
+  }, [pins, colorMap])
 
   const missing = useMemo(
     () => items.filter((c) => !(c.places ?? []).some((p) => isCoord(p.lat) && isCoord(p.lng))),
@@ -57,6 +109,19 @@ export default function ContentMap({ items, editable = false, onEdit }) {
   // 캔버스의 핀 이펙트가 이 함수를 의존성으로 잡으므로 정체성을 고정해 둔다
   const handleSelect = useCallback((key) => setSelectedKey(key), [])
   const handleNaverFailure = useCallback(() => setNaverBroken(true), [])
+  const handleViewChange = useCallback((next) => setZoom(next), [])
+
+  const toggleOverlay = useCallback((key) => {
+    setOverlays((prev) => {
+      const next = { ...prev, [key]: !prev[key] }
+      try {
+        localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(next))
+      } catch {
+        // 저장 실패해도 이번 세션 동안은 그대로 동작한다
+      }
+      return next
+    })
+  }, [])
 
   // 네이버 스크립트를 기다리는 동안 Leaflet을 먼저 띄우면 지도가 두 번 바뀌어 보인다
   if (naverState === 'loading' || naverState === 'verifying') {
@@ -96,6 +161,8 @@ export default function ContentMap({ items, editable = false, onEdit }) {
           selectedKey={selectedKey}
           onSelect={handleSelect}
           onFailure={handleNaverFailure}
+          overlays={overlays}
+          onViewChange={handleViewChange}
           className="h-80 w-full bg-neutral-100 sm:h-96"
         />
 
@@ -111,6 +178,16 @@ export default function ContentMap({ items, editable = false, onEdit }) {
             )}
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5">
+                {/* 어느 핀을 눌렀는지 색으로 이어 보이게 */}
+                <span
+                  aria-hidden="true"
+                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white"
+                  style={{
+                    background:
+                      selected.content.status === 'COMPLETED' ? selected.color : '#fff',
+                    boxShadow: `0 0 0 2px ${selected.color}`,
+                  }}
+                />
                 <span
                   className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
                     selected.content.status === 'COMPLETED'
@@ -164,6 +241,8 @@ export default function ContentMap({ items, editable = false, onEdit }) {
           </div>
         )}
       </div>
+
+      <MapLegend swatches={swatches} overlays={overlays} onToggle={toggleOverlay} zoom={zoom} />
 
       {/* 어떤 지도를 쓰고 있는지 — 네이버로 바뀌었는지 한눈에 알 수 있게 */}
       {!useNaver && (

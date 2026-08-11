@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PIN_ANCHOR_Y, PIN_SIZE, pinHtml } from './pin.js'
+import {
+  DISTRICT_STYLE,
+  MIN_ZOOM_SUBWAY,
+  SUBWAY_CORE,
+  SUBWAY_HALO,
+  loadMapOverlays,
+  stillCovered,
+  visibleDistricts,
+} from './overlays.js'
 
 // 핀이 하나도 없을 때의 기본 화면 (서울시청 근처)
 const DEFAULT_CENTER = [37.5665, 126.978]
@@ -16,11 +25,21 @@ const DEFAULT_ZOOM = 11
  * 마커 정리가 터지면 React가 트리 전체를 내려서 화면이 하얗게 된다.
  * 그래서 모든 호출을 감싸고, 실패하면 onFailure로 알려 OSM으로 넘긴다.
  */
-export default function NaverCanvas({ pins, selectedKey, onSelect, onFailure, className }) {
+export default function NaverCanvas({
+  pins,
+  selectedKey,
+  onSelect,
+  onFailure,
+  overlays,
+  onViewChange,
+  className,
+}) {
   const containerRef = useRef(null)
   const markersRef = useRef(new Map())
   const failedRef = useRef(false)
   const [map, setMap] = useState(null)
+  const [overlayData, setOverlayData] = useState(null)
+  const [view, setView] = useState(null)
 
   const reportFailure = useCallback(
     (error) => {
@@ -32,10 +51,10 @@ export default function NaverCanvas({ pins, selectedKey, onSelect, onFailure, cl
     [onFailure],
   )
 
-  const iconOf = (status, active) => {
+  const iconOf = (color, done, active) => {
     const naver = window.naver
     return {
-      content: pinHtml(status, active),
+      content: pinHtml({ color, done, active }),
       size: new naver.maps.Size(PIN_SIZE, PIN_SIZE),
       anchor: new naver.maps.Point(PIN_SIZE / 2, PIN_ANCHOR_Y),
     }
@@ -72,6 +91,47 @@ export default function NaverCanvas({ pins, selectedKey, onSelect, onFailure, cl
     }
   }, [reportFailure])
 
+  // 지금 보고 있는 영역·배율을 따라다닌다 (경계선을 화면에 걸치는 것만 그리기 위해)
+  useEffect(() => {
+    const naver = window.naver
+    if (!map || !naver?.maps) return undefined
+
+    const report = () => {
+      try {
+        const bounds = map.getBounds()
+        const sw = bounds.getSW?.() ?? bounds.getMin?.()
+        const ne = bounds.getNE?.() ?? bounds.getMax?.()
+        if (!sw || !ne) return
+        const zoom = map.getZoom()
+        const next = { south: sw.lat(), west: sw.lng(), north: ne.lat(), east: ne.lng() }
+        // 이미 그려둔 범위 안에서 움직인 거라면 그대로 둔다 (오버레이 재생성 방지)
+        setView((prev) => (stillCovered(prev, next, zoom) ? prev : { zoom, bounds: next }))
+      } catch (error) {
+        // 영역을 못 읽으면 경계선만 안 그려질 뿐이라 지도를 갈아탈 일은 아니다
+        console.error('네이버 지도 영역 조회 실패(무시함):', error)
+      }
+    }
+
+    let listener
+    try {
+      listener = naver.maps.Event.addListener(map, 'idle', report)
+      report()
+    } catch (error) {
+      reportFailure(error)
+      return undefined
+    }
+
+    return () => {
+      try {
+        naver.maps.Event.removeListener(listener)
+      } catch (error) {
+        console.error('네이버 지도 리스너 정리 실패(무시함):', error)
+      }
+    }
+  }, [map, reportFailure])
+
+  useEffect(() => onViewChange?.(view ? view.zoom : null), [view, onViewChange])
+
   // 핀 다시 찍기 (필터가 바뀔 때마다)
   useEffect(() => {
     const naver = window.naver
@@ -84,7 +144,8 @@ export default function NaverCanvas({ pins, selectedKey, onSelect, onFailure, cl
           map,
           position: new naver.maps.LatLng(pin.lat, pin.lng),
           title: pin.place.name,
-          icon: iconOf(pin.content.status, false),
+          icon: iconOf(pin.color, pin.content.status === 'COMPLETED', false),
+          zIndex: 100,
         })
         naver.maps.Event.addListener(marker, 'click', () => onSelect(pin.key))
         markers.set(pin.key, marker)
@@ -127,12 +188,103 @@ export default function NaverCanvas({ pins, selectedKey, onSelect, onFailure, cl
       for (const pin of pins) {
         markersRef.current
           .get(pin.key)
-          ?.setIcon(iconOf(pin.content.status, pin.key === selectedKey))
+          ?.setIcon(
+            iconOf(pin.color, pin.content.status === 'COMPLETED', pin.key === selectedKey),
+          )
       }
     } catch (error) {
       reportFailure(error)
     }
   }, [pins, selectedKey, reportFailure])
+
+  // 오버레이를 하나라도 켜면 그때 데이터를 받는다
+  const wantsOverlay = overlays.districts || overlays.subway
+  useEffect(() => {
+    if (!wantsOverlay || overlayData) return undefined
+    let alive = true
+    loadMapOverlays().then((data) => alive && setOverlayData(data))
+    return () => {
+      alive = false
+    }
+  }, [wantsOverlay, overlayData])
+
+  // 시·군·구 경계
+  useEffect(() => {
+    if (!map || !overlayData || !overlays.districts) return undefined
+    const lines = visibleDistricts(overlayData.districts, view?.bounds, view?.zoom ?? 0)
+    if (lines.length === 0) return undefined
+
+    const drawn = []
+    try {
+      const naver = window.naver
+      for (const line of lines) {
+        drawn.push(
+          new naver.maps.Polyline({
+            map,
+            path: line.path.map(([lat, lng]) => new naver.maps.LatLng(lat, lng)),
+            strokeColor: DISTRICT_STYLE.color,
+            strokeWeight: DISTRICT_STYLE.weight,
+            strokeOpacity: DISTRICT_STYLE.opacity,
+            strokeStyle: 'shortdash',
+            clickable: false,
+            zIndex: 1,
+          }),
+        )
+      }
+    } catch (error) {
+      console.error('시·군·구 경계 그리기 실패(무시함):', error)
+    }
+
+    return () => {
+      try {
+        for (const polyline of drawn) polyline.setMap(null)
+      } catch (error) {
+        console.error('경계선 정리 실패(무시함):', error)
+      }
+    }
+  }, [map, overlayData, overlays.districts, view])
+
+  // 수도권 전철 노선
+  useEffect(() => {
+    if (!map || !overlayData || !overlays.subway) return undefined
+    if ((view?.zoom ?? 0) < MIN_ZOOM_SUBWAY) return undefined
+
+    const drawn = []
+    try {
+      const naver = window.naver
+      for (const line of overlayData.subway) {
+        for (const path of line.paths) {
+          const latLngs = path.map(([lat, lng]) => new naver.maps.LatLng(lat, lng))
+          // 후광 → 심 순서로 두 번 그려야 노선이 배경에서 떠오른다
+          ;[SUBWAY_HALO, SUBWAY_CORE].forEach((style, index) => {
+            drawn.push(
+              new naver.maps.Polyline({
+                map,
+                path: latLngs,
+                strokeColor: line.color,
+                strokeWeight: style.weight,
+                strokeOpacity: style.opacity,
+                strokeLineCap: 'round',
+                strokeLineJoin: 'round',
+                clickable: false,
+                zIndex: 2 + index,
+              }),
+            )
+          })
+        }
+      }
+    } catch (error) {
+      console.error('지하철 노선 그리기 실패(무시함):', error)
+    }
+
+    return () => {
+      try {
+        for (const polyline of drawn) polyline.setMap(null)
+      } catch (error) {
+        console.error('노선 정리 실패(무시함):', error)
+      }
+    }
+  }, [map, overlayData, overlays.subway, view?.zoom])
 
   return <div ref={containerRef} role="application" aria-label="장소 지도" className={className} />
 }
