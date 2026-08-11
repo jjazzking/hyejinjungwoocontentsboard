@@ -104,6 +104,9 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
   (구 파라미터 `ncpClientId`는 폐기됐다). 인증 실패는 예외가 아니라 전역 콜백
   `window.navermap_authFailure`로 오므로 그걸 잡아 폴백한다.
   두 캔버스는 `{ pins, selectedKey, onSelect, className }` props가 같아야 한다.
+  **네이버 호출은 전부 try/catch로 감싼다.** 인증이 실패하면 반쯤 죽은 지도 객체가 남고,
+  정리 중 `destroy()`가 던진 예외가 올라가면 React가 트리를 내려서 화면이 하얘진다.
+  실패하면 `onFailure`로 알려 OSM으로 넘기고, 마지막 방어선으로 `MapErrorBoundary`를 둔다.
 - **네이버 지역 검색** — NCP **NAVER API HUB** 경유.
   `GET https://naverapihub.apigw.ntruss.com/search/v1/local`,
   헤더 `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY`.
