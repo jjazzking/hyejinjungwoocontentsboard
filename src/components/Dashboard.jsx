@@ -4,6 +4,7 @@ import ContentFormModal from './ContentFormModal.jsx'
 import ClipboardPrompt from './ClipboardPrompt.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
 import CompletedCalendar from './CompletedCalendar.jsx'
+import MapErrorBoundary from './MapErrorBoundary.jsx'
 // 지도 라이브러리(Leaflet)가 꽤 커서, 지도 보기를 켤 때만 내려받게 분리한다
 const ContentMap = lazy(() => import('./ContentMap.jsx'))
 import { useClipboardSuggestion } from '../hooks/useClipboardSuggestion.js'
@@ -212,22 +213,25 @@ export default function Dashboard({
         </p>
       )}
 
-      {/* 지도: 목록 위에 항상 떠 있고, 위의 필터가 핀에도 그대로 적용된다 */}
+      {/* 지도: 목록 위에 항상 떠 있고, 위의 필터가 핀에도 그대로 적용된다.
+          외부 지도 스크립트가 터져도 보드는 살아 있어야 하므로 울타리를 두른다 */}
       {!loading && (
-        <Suspense
-          fallback={
-            <div className="mb-6 flex h-80 flex-col items-center justify-center gap-3 rounded-2xl bg-white/60 text-center sm:h-96">
-              <span className="animate-pulse text-4xl">🗺️</span>
-              <p className="text-sm text-neutral-400">지도를 불러오는 중…</p>
-            </div>
-          }
-        >
-          <ContentMap
-            items={filtered}
-            editable={editMode}
-            onEdit={(content) => setModal({ mode: 'edit', content })}
-          />
-        </Suspense>
+        <MapErrorBoundary>
+          <Suspense
+            fallback={
+              <div className="mb-6 flex h-80 flex-col items-center justify-center gap-3 rounded-2xl bg-white/60 text-center sm:h-96">
+                <span className="animate-pulse text-4xl">🗺️</span>
+                <p className="text-sm text-neutral-400">지도를 불러오는 중…</p>
+              </div>
+            }
+          >
+            <ContentMap
+              items={filtered}
+              editable={editMode}
+              onEdit={(content) => setModal({ mode: 'edit', content })}
+            />
+          </Suspense>
+        </MapErrorBoundary>
       )}
 
       {/* 필터가 걸려 있을 때 지금 무엇을 보고 있는지 알려주는 한 줄 */}

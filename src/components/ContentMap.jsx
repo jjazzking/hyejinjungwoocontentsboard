@@ -25,7 +25,10 @@ const isCoord = (value) => typeof value === 'number' && Number.isFinite(value)
  */
 export default function ContentMap({ items, editable = false, onEdit }) {
   const [selectedKey, setSelectedKey] = useState(null)
+  // 스크립트는 멀쩡했지만 실제로 그리다가 깨진 경우 (인증 실패한 반쪽짜리 지도 등)
+  const [naverBroken, setNaverBroken] = useState(false)
   const naverState = useNaverMapsScript()
+  const useNaver = naverState === 'ready' && !naverBroken
 
   // 좌표가 있는 장소만 핀으로 편다 (카드 하나에 장소가 여러 개면 여러 핀)
   const pins = useMemo(() => {
@@ -53,9 +56,10 @@ export default function ContentMap({ items, editable = false, onEdit }) {
 
   // 캔버스의 핀 이펙트가 이 함수를 의존성으로 잡으므로 정체성을 고정해 둔다
   const handleSelect = useCallback((key) => setSelectedKey(key), [])
+  const handleNaverFailure = useCallback(() => setNaverBroken(true), [])
 
   // 네이버 스크립트를 기다리는 동안 Leaflet을 먼저 띄우면 지도가 두 번 바뀌어 보인다
-  if (naverState === 'loading') {
+  if (naverState === 'loading' || naverState === 'verifying') {
     return (
       <div className="mb-6 flex h-80 flex-col items-center justify-center gap-3 rounded-2xl bg-white/60 text-center sm:h-96">
         <span className="animate-pulse text-4xl">🗺️</span>
@@ -80,15 +84,18 @@ export default function ContentMap({ items, editable = false, onEdit }) {
     )
   }
 
-  const Canvas = naverState === 'ready' ? NaverCanvas : LeafletCanvas
+  const Canvas = useNaver ? NaverCanvas : LeafletCanvas
 
   return (
     <div className="mb-6">
       <div className="relative overflow-hidden rounded-2xl shadow-sm ring-1 ring-neutral-900/5">
         <Canvas
+          // 네이버 → OSM으로 갈아탈 때 지도 DOM을 새로 만들도록 키를 바꾼다
+          key={useNaver ? 'naver' : 'osm'}
           pins={pins}
           selectedKey={selectedKey}
           onSelect={handleSelect}
+          onFailure={handleNaverFailure}
           className="h-80 w-full bg-neutral-100 sm:h-96"
         />
 
@@ -159,11 +166,11 @@ export default function ContentMap({ items, editable = false, onEdit }) {
       </div>
 
       {/* 어떤 지도를 쓰고 있는지 — 네이버로 바뀌었는지 한눈에 알 수 있게 */}
-      {naverState !== 'ready' && (
+      {!useNaver && (
         <p className="mt-1.5 text-right text-[11px] text-neutral-400">
-          {naverState === 'failed'
-            ? '⚠️ 네이버 지도 인증 실패 — OpenStreetMap으로 표시 중 (키·서비스 URL 확인 필요)'
-            : '🗺️ OpenStreetMap · 네이버 지도 키를 등록하면 자동으로 바뀝니다'}
+          {naverState === 'off'
+            ? '🗺️ OpenStreetMap · 네이버 지도 키를 등록하면 자동으로 바뀝니다'
+            : '⚠️ 네이버 지도 인증 실패 — OpenStreetMap으로 표시 중 (키·서비스 URL 확인 필요)'}
         </p>
       )}
 
