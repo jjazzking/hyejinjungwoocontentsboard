@@ -52,8 +52,8 @@ export default function NaverCanvas({ pins, selectedKey, onSelect, onFailure, cl
       instance = new naver.maps.Map(el, {
         center: new naver.maps.LatLng(DEFAULT_CENTER[0], DEFAULT_CENTER[1]),
         zoom: DEFAULT_ZOOM,
-        // 페이지를 스크롤하다 지도 위에서 확대되는 사고를 막는다 (드래그·버튼은 그대로)
-        scrollWheel: false,
+        // 지도 위에서는 휠로 확대/축소한다 (페이지 스크롤은 지도 밖에서)
+        scrollWheel: true,
       })
     } catch (error) {
       reportFailure(error)
