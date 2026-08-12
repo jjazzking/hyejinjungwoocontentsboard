@@ -236,3 +236,105 @@ http://localhost:5173
 ```bash
 VITE_NAVER_MAP_CLIENT_ID=여기에_Client_ID
 ```
+
+---
+
+## 9. 인스타 DM으로 카드 만들기 — **검증 단계** 🧪
+
+> 인스타에서 릴스를 보다가 **공유 → DM으로 보드 계정에 보내면 카드가 생기는** 흐름을 노립니다.
+> 인스타 앱 안에서 두 번만 누르면 되고, 아이폰·안드로이드가 똑같이 동작합니다.
+>
+> **다만 아직 되는지 확정되지 않았습니다.** 릴스를 DM으로 공유했을 때 Meta가 보내주는
+> 데이터에 **원본 게시물 주소가 들어 있는지**가 관건인데, 문서만으로는 알 수 없어서
+> 직접 받아보고 확인해야 합니다. 이 9번은 **그 확인만 하는 절차**입니다.
+> 지금 배포하는 함수는 카드를 만들지 않고 **받은 걸 로그로 남기기만** 합니다.
+
+### 9-1. Meta 개발자 앱 만들기
+
+[developers.facebook.com](https://developers.facebook.com) → **내 앱** → **앱 만들기**
+
+- 앱에 **Instagram** 제품을 추가하고, **Instagram 로그인을 사용하는 Instagram API**
+  (`Instagram API setup with Instagram Login`) 쪽으로 설정합니다
+- **앱 설정 → 기본 설정**에서 **앱 시크릿**을 복사해 둡니다 (9-2에서 씁니다)
+
+> Meta 콘솔은 메뉴 이름이 자주 바뀝니다. 위 이름이 안 보이면 **Instagram** 제품 안에서
+> "웹훅(Webhooks)"과 "앱 시크릿"이 있는 화면을 찾으면 됩니다.
+
+### 9-2. 시크릿 등록
+
+**Project Settings** → **Edge Functions** → **Secrets** 에 두 개를 넣습니다.
+
+| 이름 | 값 |
+| --- | --- |
+| `META_VERIFY_TOKEN` | 아무 문자열 (예: `hyejin-jungwoo-2026`). 9-4에서 똑같이 입력합니다 |
+| `META_APP_SECRET` | 9-1에서 복사한 **앱 시크릿** |
+
+`META_APP_SECRET`은 **이 엔드포인트의 유일한 자물쇠**입니다 (아래 9-3 참고). 꼭 넣으세요.
+
+### 9-3. 함수 배포 + ⚠️ JWT 검증 끄기
+
+**Edge Functions** → **Deploy a new function** → **Via Editor**
+
+- Function name: `instagram-webhook`
+- 내용: [`supabase/functions/instagram-webhook/index.ts`](./supabase/functions/instagram-webhook/index.ts) 전체 붙여넣기
+
+배포한 뒤 **그 함수의 설정에서 JWT 검증을 끕니다.**
+(함수 상세 → **Settings** → `Verify JWT` / `Enforce JWT verification` 류의 스위치)
+
+> **이걸 빠뜨리면 100% 실패합니다.** Meta는 Supabase anon 키를 붙여주지 않아서,
+> 켜져 있으면 요청이 함수에 닿기도 전에 401로 막힙니다.
+> 대신 이 주소는 사실상 공개가 되므로, 함수는 `META_APP_SECRET`으로
+> **Meta가 보낸 서명(`X-Hub-Signature-256`)을 검증**해서 남의 요청을 걸러냅니다.
+
+함수 주소는 이 형태입니다 (9-4에서 붙여넣습니다):
+
+```
+https://<프로젝트-ref>.supabase.co/functions/v1/instagram-webhook
+```
+
+### 9-4. Meta 앱에 웹훅 등록
+
+Instagram 제품 → **Webhooks(웹훅)**
+
+1. **콜백 URL**: 위 함수 주소
+2. **확인 토큰**: `META_VERIFY_TOKEN` 에 넣은 것과 **똑같은 문자열**
+3. **확인 및 저장** — 여기서 통과해야 다음으로 갑니다
+   (실패하면 9-3의 JWT 스위치를 먼저 의심하세요)
+4. 저장되면 **`messages` 필드를 구독**합니다
+5. 화면 안내에 따라 **보드용 인스타 프로페셔널 계정을 연결**합니다
+
+### 9-5. ⚠️ 인스타 앱에서 메시지 접근 허용
+
+인스타 앱 → **설정** → **메시지 및 스토리 답장** → **연결된 도구**
+→ **메시지 접근 허용**을 켭니다.
+
+> 이 스위치가 꺼져 있으면 웹훅이 **아무것도 안 옵니다.** 가장 많이 빠뜨리는 단계입니다.
+
+### 9-6. 테스트 — 릴스를 DM으로 보내기
+
+**다른 계정에서** 보드 계정으로 보내야 합니다. (자기 자신에게 보낸 DM은 웹훅이
+안 오거나 형태가 다릅니다. 두 사람이 쓰는 보드니 서로의 계정을 쓰면 됩니다.)
+
+인스타에서 릴스 하나 → **공유** → 보드 계정 선택 → 보내기.
+
+그다음 **Edge Functions → instagram-webhook → Logs** 를 봅니다.
+
+### 9-7. 결과 읽는 법
+
+로그에 이런 줄들이 찍힙니다.
+
+```
+instagram-webhook: 📦 payload (…)        ← 받은 데이터 전체
+instagram-webhook: 🧩 첨부 type=… payload 키=[…]
+instagram-webhook: 🔎 발견한 링크 N개
+instagram-webhook: ✅ 게시물 주소를 찾았습니다 → https://www.instagram.com/reel/…
+instagram-webhook: ❌ 게시물 주소(instagram.com/reel/… 형태)는 없습니다
+```
+
+- **✅ 가 뜨면** → 이 방식으로 갑니다. 함수에 카드 생성 로직을 얹으면 끝입니다
+- **❌ 가 뜨면** → 링크가 `lookaside.fbsbx.com/…` 같은 CDN 주소만 오는 경우입니다.
+  그 주소로는 어떤 게시물인지 알 수 없어서 **DM 방식은 여기서 접습니다.**
+  대신 공유버튼(PWA/단축어)이나 링크 여러 개 붙여넣기로 갑니다
+- **아무 로그도 안 찍히면** → 9-5 스위치, 9-3 JWT, 9-4 `messages` 구독 순으로 확인
+
+> 확인이 끝나면 이 함수는 지워도 됩니다. 로그만 남기고 아무것도 저장하지 않습니다.

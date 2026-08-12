@@ -53,6 +53,7 @@ supabase/
   schema.sql                  테이블 · RLS · 마이그레이션 SQL
   functions/analyze-link/     Claude로 링크 분석 + 장소 자동 검색
   functions/place-search/     네이버 지역 검색 프록시
+  functions/instagram-webhook/ 인스타 DM 웹훅 (검증용 탐침 — payload를 로그로만 남긴다)
 docs/MAP_FEATURE.md           지도 기능 기획 노트 (아직 미구현 단계 포함)
 SUPABASE_SETUP.md             공유 DB · Edge Function · 네이버 키 설정 안내
 ```
@@ -119,6 +120,12 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
   다시 만들 수 있고, 510KB라 경계를 처음 켤 때 동적 import로 따로 내려받는다.
   화면에 걸치는 것만, 배율 10 이상에서만 그린다 (전국을 다 얹으면 폴리라인이 2,000개가 넘는다).
   **JSON을 손으로 고치지 말고 스크립트를 고쳐서 다시 생성할 것.**
+- **인스타 DM 웹훅** — `instagram-webhook` 함수. **아직 검증 단계**로, 릴스를 DM으로
+  공유했을 때 payload에 원본 permalink가 들어오는지만 확인한다 (카드는 만들지 않는다).
+  Meta는 anon 키를 안 붙이므로 **이 함수만 JWT 검증을 꺼야** 하고, 그래서 공개 엔드포인트가 된다
+  — `META_APP_SECRET`으로 `X-Hub-Signature-256`을 검증하는 게 유일한 자물쇠다.
+  Meta는 200이 아니면 계속 재전송하므로 **무슨 일이 있어도 200을 돌려준다.**
+  설정 순서는 SUPABASE_SETUP.md 9번.
 - **네이버 지역 검색** — NCP **NAVER API HUB** 경유.
   `GET https://naverapihub.apigw.ntruss.com/search/v1/local`,
   헤더 `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY`.
