@@ -9,6 +9,7 @@
  *   원본: southkorea/southkorea-maps (통계청 2018 시군구, 원본 해상도 TopoJSON)
  *   TopoJSON의 arc는 맞닿은 두 구가 공유하므로, arc를 그대로 선으로 그리면
  *   경계가 딱 한 번씩만 그려진다 (폴리곤으로 풀면 같은 선을 두 번 그린다).
+ *   그 '공유하는 구들'이 누구인지를 보고 시 경계와 구 경계를 갈라 놓는다.
  *
  * 행정구역이 바뀌면 이 스크립트를 다시 돌려 JSON을 갱신한다.
  */
@@ -87,17 +88,76 @@ function simplify(points, tolerance) {
   return points.filter((_, i) => keep[i] === 1)
 }
 
+/**
+ * 행정구역 하나를 "어느 시에 속하는가" 키로 바꾼다.
+ * 이 키가 같고 둘 다 구이면 그 사이 선은 **구 경계**, 아니면 **시 경계**다.
+ *
+ *   수원시장안구 · 수원시팔달구  → '수원시'  (일반구는 이름에 상위 시가 붙어 있다)
+ *   종로구 · 중구               → '11'      (특별·광역시의 자치구는 시도 코드로 묶는다)
+ *   성남시 · 가평군             → 자기 자신  (시·군은 그 자체가 한 덩어리)
+ *
+ * 부산 중구와 대구 중구처럼 이름이 겹치는 자치구가 있어서, 자치구는 이름이 아니라
+ * 코드 앞 두 자리(시도)로 묶어야 한다.
+ */
+function cityKeyOf({ name, code }) {
+  const general = name.match(/^(.+?시)(.+구)$/)
+  if (general) return general[1]
+  if (name.endsWith('구')) return code.slice(0, 2)
+  return code
+}
+
 async function buildDistricts() {
   const topo = JSON.parse(await fetchText(TOPO_URL))
   const { transform, arcs } = topo
+  const geometries = Object.values(topo.objects)[0].geometries
 
-  const lines = []
+  // arc 번호 → 그 선을 경계로 쓰는 행정구역들
+  const owners = new Map()
+  const remember = (index, unit) => {
+    // 음수는 같은 arc를 거꾸로 쓴다는 표시다 (~index 가 실제 번호)
+    const key = index < 0 ? ~index : index
+    if (!owners.has(key)) owners.set(key, [])
+    owners.get(key).push(unit)
+  }
+  const walk = (node, unit) => {
+    if (typeof node === 'number') remember(node, unit)
+    else for (const child of node) walk(child, unit)
+  }
+  for (const geometry of geometries) {
+    const { name, code } = geometry.properties
+    walk(geometry.arcs, { name, code, cityKey: cityKeyOf(geometry.properties) })
+  }
+
+  /**
+   * 선 하나를 분류한다.
+   *
+   *   'district' — 같은 시에 속한 구끼리 맞닿은 선 (회색)
+   *   'city'     — 그 밖의 행정구역이 맞닿은 선 (주황)
+   *   null       — 한 구역만 쓰는 선 = 해안선·국경·섬 테두리 → **그리지 않는다**
+   *
+   * 해안선을 빼는 이유: 전체 2,155개 중 1,487개(69%)가 바다 쪽 선이라 그대로 그리면
+   * 남해안·섬이 전부 주황색이 된다. 물가는 밑에 깔린 지도가 이미 보여주고 있어서
+   * 우리가 한 번 더 그릴 이유가 없다. 뺀 덕에 그릴 선이 668개로 줄었다.
+   */
+  const classify = (index) => {
+    const units = owners.get(index) ?? []
+    if (units.length < 2) return null
+    const sameCityDistricts = units.every(
+      (unit) => unit.name.endsWith('구') && unit.cityKey === units[0].cityKey,
+    )
+    return sameCityDistricts ? 'district' : 'city'
+  }
+
+  const city = []
+  const district = []
   let points = 0
-  for (const arc of arcs) {
+  arcs.forEach((arc, index) => {
     // 위경도(도) 단위 허용오차 — 0.0002도 ≈ 22m.
     // 배율 14에서 1픽셀이 ~9m라 오차가 2px 안쪽이다. 더 줄여도 눈에 안 띄는데 용량만 는다.
+    const kind = classify(index)
+    if (!kind) return
     const simplified = simplify(decodeArc(arc, transform), 0.0002)
-    if (simplified.length < 2) continue
+    if (simplified.length < 2) return
     // 1e-4도(≈11m) 격자에 올린 뒤 앞 점과의 차이만 적는다.
     // 소수점 좌표를 그대로 쓰는 것보다 파일이 절반 이하로 줄어든다 (복원은 overlays.js).
     const flat = []
@@ -110,17 +170,20 @@ async function buildDistricts() {
       prevLat = y
       prevLng = x
     }
-    lines.push(flat)
+    ;(kind === 'district' ? district : city).push(flat)
     points += simplified.length
-  }
+  })
 
   const json = {
     _source: 'southkorea/southkorea-maps · 통계청 2018 시군구 (22m 단순화 후 재가공)',
-    _format: 'lines: 경계선 하나당 [Δlat, Δlng, …] · 1e-4도 단위 정수 누적합',
-    lines,
+    _format: 'city/district: 경계선 하나당 [Δlat, Δlng, …] · 1e-4도 단위 정수 누적합',
+    city,
+    district,
   }
   writeFileSync(resolve(OUT_DIR, 'districtBoundaries.json'), JSON.stringify(json))
-  console.log(`districtBoundaries.json — 선 ${lines.length}개 / 점 ${points}개`)
+  console.log(
+    `districtBoundaries.json — 시 경계 ${city.length}개 / 구 경계 ${district.length}개 / 점 ${points}개`,
+  )
 }
 
 await buildDistricts()
