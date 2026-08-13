@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import LeafletCanvas from './map/LeafletCanvas.jsx'
 import MapLegend from './map/MapLegend.jsx'
+import PinSheet from './map/PinSheet.jsx'
 import NaverCanvas from './map/NaverCanvas.jsx'
 import { useNaverMapsScript } from './map/useNaverMapsScript.js'
 import {
@@ -9,12 +10,6 @@ import {
   buildCategoryColorMap,
   contentColor,
 } from '../utils/categoryColors.js'
-
-function formatDate(dateStr) {
-  const date = new Date(`${dateStr}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return dateStr
-  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long' }).format(date)
-}
 
 const isCoord = (value) => typeof value === 'number' && Number.isFinite(value)
 
@@ -36,7 +31,7 @@ function loadDistrictsPref() {
  * - 핀 색 = 태그(첫 번째 카테고리), 핀 모양 = 상태(할 것은 테두리만, 한 것은 꽉 채움)
  *   → 어떤 태그가 무슨 색인지는 지도 아래 범례에 나온다
  * - 배경: 시·군·구 경계선 (범례 줄에서 켜고 끈다)
- * - 핀을 누르면 하단에 미니 카드가 뜨고, 편집 모드면 거기서 바로 수정할 수 있다
+ * - 핀을 누르면 **목록에 있는 것과 같은 카드**가 시트로 올라온다 (사진·임베드·메모까지)
  * - 좌표가 없는 카드(이름만 저장한 장소, 장소 없는 카드)는 지도에 못 뜨므로
  *   아래에 "위치 없는 카드 N개"로 따로 안내한다
  *
@@ -102,6 +97,7 @@ export default function ContentMap({ items, categories = [], editable = false, o
   const handleSelect = useCallback((key) => setSelectedKey(key), [])
   const handleNaverFailure = useCallback(() => setNaverBroken(true), [])
   const handleViewChange = useCallback((next) => setZoom(next), [])
+  const handleClose = useCallback(() => setSelectedKey(null), [])
 
   const toggleDistricts = useCallback(() => {
     setShowDistricts((prev) => {
@@ -157,82 +153,17 @@ export default function ContentMap({ items, categories = [], editable = false, o
           onViewChange={handleViewChange}
           className="h-80 w-full bg-neutral-100 sm:h-96"
         />
-
-        {/* 핀 탭 → 미니 카드 */}
-        {selected && (
-          <div className="absolute inset-x-3 bottom-3 z-[1000] flex gap-3 rounded-xl bg-white/95 p-3 shadow-lg ring-1 ring-neutral-900/10 backdrop-blur sm:right-auto sm:max-w-md">
-            {selected.content.photo_urls?.[0] && (
-              <img
-                src={selected.content.photo_urls[0]}
-                alt=""
-                className="h-16 w-16 shrink-0 rounded-lg object-cover"
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5">
-                {/* 어느 핀을 눌렀는지 색으로 이어 보이게 */}
-                <span
-                  aria-hidden="true"
-                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white"
-                  style={{
-                    background:
-                      selected.content.status === 'COMPLETED' ? selected.color : '#fff',
-                    boxShadow: `0 0 0 2px ${selected.color}`,
-                  }}
-                />
-                <span
-                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                    selected.content.status === 'COMPLETED'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}
-                >
-                  {selected.content.status === 'COMPLETED' ? '✅ 한 것' : '🗓️ 할 것'}
-                </span>
-                <span className="truncate text-sm font-semibold text-neutral-900">
-                  {selected.content.title}
-                </span>
-              </p>
-              <p className="mt-0.5 truncate text-xs text-neutral-500">
-                📍 {selected.place.name}
-                {selected.place.address ? ` · ${selected.place.address}` : ''}
-              </p>
-              <p className="mt-0.5 text-[11px] text-neutral-400">
-                {formatDate(selected.content.date)}
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {selected.place.url && (
-                  <a
-                    href={selected.place.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-200"
-                  >
-                    지도에서 보기 ↗
-                  </a>
-                )}
-                {editable && (
-                  <button
-                    type="button"
-                    onClick={() => onEdit?.(selected.content)}
-                    className="rounded-full bg-rose-400 px-2.5 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-rose-500"
-                  >
-                    ✏️ 카드 수정
-                  </button>
-                )}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedKey(null)}
-              aria-label="닫기"
-              className="h-fit shrink-0 rounded-full px-1.5 text-sm text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
-            >
-              ✕
-            </button>
-          </div>
-        )}
       </div>
+
+      <PinSheet
+        pin={selected}
+        editable={editable}
+        onEdit={(content) => {
+          setSelectedKey(null)
+          onEdit?.(content)
+        }}
+        onClose={handleClose}
+      />
 
       <MapLegend
         swatches={swatches}

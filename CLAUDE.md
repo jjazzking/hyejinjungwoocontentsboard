@@ -25,13 +25,14 @@ src/
     ContentFormModal.jsx      카드 추가·수정 폼 (AI 자동 채움 진입점)
     CategoryFilter.jsx        '할 일' 탭의 태그별 필터 칩
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
-    ContentMap.jsx            지도 (lazy 로드) — 핀 계산·범례·미니 카드·위치 없는 카드 안내
+    ContentMap.jsx            지도 (lazy 로드) — 핀 계산·범례·시트·위치 없는 카드 안내
     map/NaverCanvas.jsx       네이버 지도 v3로 핀·경계선 그리기
     map/LeafletCanvas.jsx     OSM 폴백으로 핀·경계선 그리기 (같은 props)
     map/useNaverMapsScript.js 네이버 스크립트 로더 (off/loading/ready/failed)
     map/pin.js                두 지도가 공유하는 핀 마크업 (태그 색 · 상태별 채움)
     map/overlays.js           시·군·구 경계 데이터 로더 · 스타일 · 화면 컬링
     map/MapLegend.jsx         지도 아래 범례 + 경계 on/off 스위치
+    map/PinSheet.jsx          핀 탭 → 실제 카드를 그대로 띄우는 시트
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
     ShareToast.jsx            공유로 받은 링크의 저장 결과 알림 (+ 수정하기)
