@@ -34,11 +34,13 @@ src/
     map/MapLegend.jsx         지도 아래 범례 + 경계 on/off 스위치
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
+    ShareToast.jsx            공유로 받은 링크의 저장 결과 알림 (+ 수정하기)
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
   hooks/
     useContents.js            카드 CRUD (Supabase ↔ localStorage 이중 모드)
     useCategories.js          커스텀 카테고리
     useClipboardSuggestion.js 클립보드 감시
+    useSharedLink.js          공유(`?url=`/`?text=`)로 들어온 링크 1회 수신
   utils/
     linkAnalyzer.js           링크 → 카드 초안 (Edge Function 호출, oEmbed 폴백)
     placeSearch.js            장소 검색 Edge Function 호출
@@ -47,6 +49,10 @@ src/
   data/
     districtBoundaries.json   시·군·구 경계선 (생성물 — 직접 고치지 말 것)
   lib/supabaseClient.js       설정 없으면 null → localStorage 모드
+public/
+  manifest.webmanifest        PWA + 안드로이드 공유 시트(share_target)
+  sw.js                       설치 조건만 채우는 빈 서비스 워커 (캐싱 안 함)
+  icon-*.png                  홈 화면 아이콘 (생성물)
 scripts/
   build-map-overlays.mjs      위 JSON을 공개 데이터에서 만들어 내는 스크립트
 supabase/
@@ -55,6 +61,7 @@ supabase/
   functions/place-search/     네이버 지역 검색 프록시
   functions/instagram-webhook/ 인스타 DM 웹훅 (검증용 탐침 — payload를 로그로만 남긴다)
 docs/MAP_FEATURE.md           지도 기능 기획 노트 (아직 미구현 단계 포함)
+docs/SHARE_TARGET.md          인스타 공유 → 카드 (폰별 설치 방법 포함)
 SUPABASE_SETUP.md             공유 DB · Edge Function · 네이버 키 설정 안내
 ```
 
@@ -127,6 +134,12 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
   — `META_APP_SECRET`으로 `X-Hub-Signature-256`을 검증하는 게 유일한 자물쇠다.
   Meta는 200이 아니면 계속 재전송하므로 **무슨 일이 있어도 200을 돌려준다.**
   설정 순서는 SUPABASE_SETUP.md 9번.
+- **공유로 카드 만들기** — 외부 API가 아니라 **브라우저 표준**이다.
+  안드로이드는 manifest의 `share_target`으로 공유 시트에 뜨고, 아이폰은 애플이
+  이 표준을 지원하지 않아 **단축어**로 같은 주소를 연다. 그래서 받는 쪽 코드는
+  `?url=`/`?text=`/`?title=` 세 칸을 훑는 `useSharedLink` 하나면 된다.
+  **인스타는 링크를 `url`이 아니라 `text`에 문장째로 넣어 보낸다** — 반드시 셋 다 볼 것.
+  `sw.js`에 캐싱을 넣지 말 것 (배포해도 옛 화면이 남는다). 설치 방법은 docs/SHARE_TARGET.md.
 - **네이버 지역 검색** — NCP **NAVER API HUB** 경유.
   `GET https://naverapihub.apigw.ntruss.com/search/v1/local`,
   헤더 `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY`.

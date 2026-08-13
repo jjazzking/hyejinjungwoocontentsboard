@@ -1,15 +1,17 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import ContentCard from './ContentCard.jsx'
 import ContentFormModal from './ContentFormModal.jsx'
 import ClipboardPrompt from './ClipboardPrompt.jsx'
+import ShareToast from './ShareToast.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
 import CompletedCalendar from './CompletedCalendar.jsx'
 import MapErrorBoundary from './MapErrorBoundary.jsx'
 // 지도 라이브러리(Leaflet)가 꽤 커서, 지도 보기를 켤 때만 내려받게 분리한다
 const ContentMap = lazy(() => import('./ContentMap.jsx'))
 import { useClipboardSuggestion } from '../hooks/useClipboardSuggestion.js'
+import { useSharedLink } from '../hooks/useSharedLink.js'
 import { useCategories } from '../hooks/useCategories.js'
-import { analyzeLink } from '../utils/linkAnalyzer.js'
+import { analyzeLink, normalizeSnsUrl } from '../utils/linkAnalyzer.js'
 
 const TABS = [
   { key: 'PLANNING', label: '할 것들', emoji: '🗓️' },
@@ -32,6 +34,7 @@ function formatDay(dateStr) {
  * - 편집 모드 토글: 카드마다 ☰(위치 이동)/상태 전환/수정/삭제 버튼 + 새 컨텐츠 추가 버튼 노출
  * - 위치 이동: ☰을 누르면 이동 모드 — 다른 카드를 누르면 그 앞으로, 맨 뒤 슬롯을 누르면 맨 뒤로
  * - 클립보드에서 SNS 링크를 발견하면 하단 배너로 카드 생성을 제안
+ * - 다른 앱에서 '공유'로 들어오면(`?url=…`) 묻지 않고 바로 카드로 저장하고 결과만 알린다
  */
 export default function Dashboard({
   contents,
@@ -56,6 +59,15 @@ export default function Dashboard({
 
   const { suggestion, resolveSuggestion } = useClipboardSuggestion(contents)
   const { categories, addCategory } = useCategories(contents)
+  // 다른 앱에서 공유로 넘어온 링크 (처음 뜰 때 한 번만 잡힌다)
+  const sharedUrl = useSharedLink()
+  // shareState: null | { status, title?, contentId? }
+  const [shareState, setShareState] = useState(sharedUrl ? { status: 'saving' } : null)
+  // 공유 처리는 비동기라 도중에 값이 바뀐다 — 항상 최신값을 읽도록 ref로 따라다닌다
+  const contentsRef = useRef(contents)
+  contentsRef.current = contents
+  const categoriesRef = useRef(categories)
+  categoriesRef.current = categories
 
   // 배열 순서가 곧 표시 순서 — 탭별로 걸러낸 뒤 필터를 적용한다
   const tabItems = useMemo(() => contents.filter((c) => c.status === activeTab), [contents, activeTab])
@@ -120,6 +132,48 @@ export default function Dashboard({
       onRemove(content.id)
     }
   }
+
+  // 공유로 들어온 링크는 확인을 묻지 않고 바로 카드로 만든다.
+  // 카드 목록을 다 받은 뒤에 시작해야 중복 검사가 맞고, Supabase 모드에서
+  // 정렬 순서(sort_order)도 제대로 붙는다.
+  useEffect(() => {
+    if (!sharedUrl || loading) return
+    let alive = true
+
+    const run = async () => {
+      const already = contentsRef.current.find(
+        (c) => c.reference_url && normalizeSnsUrl(c.reference_url) === sharedUrl,
+      )
+      if (already) {
+        setShareState({ status: 'duplicate', title: already.title, contentId: already.id })
+        return
+      }
+
+      let draft
+      try {
+        draft = await analyzeLink(sharedUrl, categoriesRef.current)
+      } catch (analyzeError) {
+        console.error('공유 링크 분석 실패:', analyzeError)
+      }
+      if (!alive) return
+
+      if (!draft) {
+        setShareState({ status: 'failed', title: sharedUrl })
+        return
+      }
+      const id = onAdd(draft)
+      // 새 카드는 '할 것'으로 들어가므로 그 탭을 보여줘야 방금 저장한 게 보인다
+      setActiveTab('PLANNING')
+      setShareState({ status: 'saved', title: draft.title, contentId: id })
+    }
+
+    run()
+    return () => {
+      alive = false
+    }
+    // sharedUrl은 처음 한 번만 정해지고, 나머지는 최신값을 ref로 읽는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedUrl, loading])
 
   // 클립보드 링크로 카드 초안 만들기: 게시물 분석 후 폼을 미리 채워서 연다
   const handleCreateFromClipboard = async () => {
@@ -328,6 +382,20 @@ export default function Dashboard({
       )}
 
       {/* 클립보드 링크 감지 배너 */}
+      <ShareToast
+        state={shareState}
+        onEdit={
+          shareState?.contentId
+            ? () => {
+                const content = contents.find((c) => c.id === shareState.contentId)
+                if (content) setModal({ mode: 'edit', content })
+                setShareState(null)
+              }
+            : undefined
+        }
+        onDismiss={() => setShareState(null)}
+      />
+
       <ClipboardPrompt
         suggestion={suggestion}
         analyzing={analyzing}
