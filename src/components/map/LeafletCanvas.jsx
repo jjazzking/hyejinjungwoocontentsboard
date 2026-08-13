@@ -3,6 +3,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { PIN_ANCHOR_Y, PIN_SIZE, pinHtml } from './pin.js'
 import {
+  CITY_STYLE,
   DISTRICT_STYLE,
   loadDistrictBoundaries,
   stillCovered,
@@ -144,24 +145,29 @@ export default function LeafletCanvas({
     }
   }, [showDistricts, districts])
 
-  // 시·군·구 경계
+  // 시·군·구 경계 — 구(회색)를 먼저 깔고 시(주황)를 그 위에 얹어야 시 경계가 안 묻힌다
   useEffect(() => {
     if (!map || !districts || !showDistricts) return undefined
-    const lines = visibleDistricts(districts, view?.bounds, view?.zoom ?? 0)
-    if (lines.length === 0) return undefined
-    const layer = L.polyline(
-      lines.map((line) => line.path),
-      {
-        pane: DISTRICT_PANE,
-        color: DISTRICT_STYLE.color,
-        weight: DISTRICT_STYLE.weight,
-        opacity: DISTRICT_STYLE.opacity,
-        lineCap: 'round',
-        lineJoin: 'round',
-        interactive: false,
-      },
-    ).addTo(map)
-    return () => layer.remove()
+    const group = L.layerGroup().addTo(map)
+    for (const [lines, style] of [
+      [visibleDistricts(districts.district, view?.bounds, view?.zoom ?? 0), DISTRICT_STYLE],
+      [visibleDistricts(districts.city, view?.bounds, view?.zoom ?? 0), CITY_STYLE],
+    ]) {
+      if (lines.length === 0) continue
+      L.polyline(
+        lines.map((line) => line.path),
+        {
+          pane: DISTRICT_PANE,
+          color: style.color,
+          weight: style.weight,
+          opacity: style.opacity,
+          lineCap: 'round',
+          lineJoin: 'round',
+          interactive: false,
+        },
+      ).addTo(group)
+    }
+    return () => group.remove()
   }, [map, districts, showDistricts, view])
 
   return <div ref={containerRef} role="application" aria-label="장소 지도" className={className} />

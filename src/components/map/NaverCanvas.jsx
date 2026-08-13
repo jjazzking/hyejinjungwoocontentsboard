@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PIN_ANCHOR_Y, PIN_SIZE, pinHtml } from './pin.js'
 import {
+  CITY_STYLE,
   DISTRICT_STYLE,
   loadDistrictBoundaries,
   stillCovered,
@@ -204,30 +205,34 @@ export default function NaverCanvas({
     }
   }, [showDistricts, districts])
 
-  // 시·군·구 경계
+  // 시·군·구 경계 — 구(회색)를 먼저 깔고 시(주황)를 그 위에 얹어야 시 경계가 안 묻힌다
   useEffect(() => {
     if (!map || !districts || !showDistricts) return undefined
-    const lines = visibleDistricts(districts, view?.bounds, view?.zoom ?? 0)
-    if (lines.length === 0) return undefined
 
     const drawn = []
     try {
       const naver = window.naver
-      for (const line of lines) {
-        drawn.push(
-          new naver.maps.Polyline({
-            map,
-            path: line.path.map(([lat, lng]) => new naver.maps.LatLng(lat, lng)),
-            strokeColor: DISTRICT_STYLE.color,
-            strokeWeight: DISTRICT_STYLE.weight,
-            strokeOpacity: DISTRICT_STYLE.opacity,
-            strokeLineCap: 'round',
-            strokeLineJoin: 'round',
-            clickable: false,
-            zIndex: 1,
-          }),
-        )
-      }
+      const tiers = [
+        [visibleDistricts(districts.district, view?.bounds, view?.zoom ?? 0), DISTRICT_STYLE],
+        [visibleDistricts(districts.city, view?.bounds, view?.zoom ?? 0), CITY_STYLE],
+      ]
+      tiers.forEach(([lines, style], tier) => {
+        for (const line of lines) {
+          drawn.push(
+            new naver.maps.Polyline({
+              map,
+              path: line.path.map(([lat, lng]) => new naver.maps.LatLng(lat, lng)),
+              strokeColor: style.color,
+              strokeWeight: style.weight,
+              strokeOpacity: style.opacity,
+              strokeLineCap: 'round',
+              strokeLineJoin: 'round',
+              clickable: false,
+              zIndex: 1 + tier,
+            }),
+          )
+        }
+      })
     } catch (error) {
       console.error('시·군·구 경계 그리기 실패(무시함):', error)
     }
