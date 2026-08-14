@@ -55,6 +55,10 @@ export default function ContentFormModal({
       const { place_debug, ...rest } = initial
       setPlaceDebug(place_debug ?? '')
       setForm({
+        // 일부 칸만 채운 초안(예: 태그만 지정하고 여는 경우)도 들어오므로
+        // 빈 폼 위에 덮어써야 나머지 칸이 undefined가 되지 않는다
+        ...EMPTY_FORM,
+        date: new Date().toISOString().slice(0, 10),
         ...rest,
         categories: initial.categories ?? [],
         places: initial.places ?? [],

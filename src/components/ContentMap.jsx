@@ -40,7 +40,7 @@ function loadDistrictsPref() {
  * categories 는 **보드 전체**의 카테고리 목록 — 필터를 걸어도 태그 색이 안 바뀌게 하려면
  * 지금 보이는 카드가 아니라 전체 목록을 기준으로 색을 나눠야 한다.
  */
-export default function ContentMap({ items, categories = [], editable = false, onEdit }) {
+export default function ContentMap({ items, categories = [], onEdit }) {
   const [selectedKey, setSelectedKey] = useState(null)
   // 스크립트는 멀쩡했지만 실제로 그리다가 깨진 경우 (인증 실패한 반쪽짜리 지도 등)
   const [naverBroken, setNaverBroken] = useState(false)
@@ -132,7 +132,7 @@ export default function ContentMap({ items, categories = [], editable = false, o
             카드를 수정해서 📍 장소를 검색해 넣으면 여기에 핀으로 뜹니다.
           </p>
         </div>
-        <MissingList missing={missing} editable={editable} onEdit={onEdit} />
+        <MissingList missing={missing} onEdit={onEdit} />
       </div>
     )
   }
@@ -157,7 +157,6 @@ export default function ContentMap({ items, categories = [], editable = false, o
 
       <PinSheet
         pin={selected}
-        editable={editable}
         onEdit={(content) => {
           setSelectedKey(null)
           onEdit?.(content)
@@ -181,13 +180,13 @@ export default function ContentMap({ items, categories = [], editable = false, o
         </p>
       )}
 
-      <MissingList missing={missing} editable={editable} onEdit={onEdit} />
+      <MissingList missing={missing} onEdit={onEdit} />
     </div>
   )
 }
 
 /** 좌표가 없어 지도에 못 뜨는 카드 안내 */
-function MissingList({ missing, editable, onEdit }) {
+function MissingList({ missing, onEdit }) {
   if (missing.length === 0) return null
   return (
     <details className="mt-3 rounded-xl bg-white px-4 py-2.5 text-sm shadow-sm ring-1 ring-neutral-900/5">
@@ -198,15 +197,13 @@ function MissingList({ missing, editable, onEdit }) {
         {missing.map((content) => (
           <li key={content.id} className="flex items-center gap-2 text-xs text-neutral-500">
             <span className="truncate">{content.title}</span>
-            {editable && (
-              <button
-                type="button"
-                onClick={() => onEdit?.(content)}
-                className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600 transition-colors hover:bg-neutral-200"
-              >
-                장소 넣기
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => onEdit?.(content)}
+              className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600 transition-colors hover:bg-neutral-200"
+            >
+              장소 넣기
+            </button>
           </li>
         ))}
       </ul>
