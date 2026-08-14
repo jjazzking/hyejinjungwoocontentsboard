@@ -21,7 +21,10 @@ src/
   App.jsx                     최상위, Dashboard 렌더
   components/
     Dashboard.jsx             탭(PLANNING/COMPLETED) · 필터 · 카드 그리드 · 모달 제어
-    ContentCard.jsx           카드 1장 (사진/임베드/장소/카테고리) + 상시 노출 액션
+    ContentCard.jsx           풀 카드 1장 (사진/임베드/장소/카테고리) — 시트 안에서만 쓴다
+    ContentSummary.jsx        축약 카드 — 목록에 깔리는 한 줄 요약 + 상시 노출 액션
+    ContentSheet.jsx          축약 카드를 누르면 뜨는 풀 카드 시트 (목록·지도 공용)
+    CategoryPicker.jsx        '이 태그에 넣을 카드 고르기' 창 (기존 카드 토글)
     ContentFormModal.jsx      카드 추가·수정 폼 (AI 자동 채움 진입점)
     CategoryFilter.jsx        '할 일' 탭의 태그 칩 — 필터 + 태그 만들기(＋ 태그)
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
@@ -32,7 +35,7 @@ src/
     map/pin.js                두 지도가 공유하는 핀 마크업 (태그 색 · 상태별 채움)
     map/overlays.js           시·군·구 경계 데이터 로더 · 스타일 · 화면 컬링
     map/MapLegend.jsx         지도 아래 범례 + 경계 on/off 스위치
-    map/PinSheet.jsx          핀 탭 → 실제 카드를 그대로 띄우는 시트
+    map/PinMiniCard.jsx       핀 탭 → 지도 위 축약 카드 (누르면 ContentSheet)
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
     ShareToast.jsx            공유로 받은 링크의 저장 결과 알림 (+ 수정하기)
@@ -89,6 +92,11 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 **실패는 화면에 이유를 남긴다.** 외부 API 실패는 500으로 던지지 말고 HTTP 200에
 `failed` / `detail` / `place_debug` 같은 한국어 사유를 담아 폼에 그대로 보여준다.
 사용자가 로그를 열지 않고도 원인을 알 수 있어야 한다.
+
+**축약 → 풀 카드 두 단계다.** 목록과 지도는 축약 카드(`ContentSummary` / `PinMiniCard`)로
+훑고, 누르면 `ContentSheet`가 풀 카드를 띄운다. 목록을 전부 풀 카드로 깔면 임베드·사진
+때문에 한 화면에 두세 장밖에 안 들어와서 훑을 수가 없다. **풀 카드(`ContentCard`)는
+시트 안에서만 쓴다** — 목록에 직접 넣지 말 것.
 
 **편집 모드는 없다.** 카드의 ✏️ 수정은 항상 떠 있고, 나머지(완료 전환·순서 이동·삭제)는
 카드의 `⋯` 뒤에 접혀 있다. 예전엔 상단 '편집' 토글을 켜야 액션이 나왔는데 한 번 더 누르는
