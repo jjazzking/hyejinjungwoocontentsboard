@@ -185,6 +185,34 @@ Supabase 대시보드 → **Edge Functions** → **Secrets** 에 2개 추가:
 시크릿이 없거나 검색이 실패해도 장소 **이름만 직접 입력**해서 저장할 수 있습니다
 (좌표가 없을 뿐, 카드에는 그대로 표시돼요).
 
+### 7-6. 상호명으로 못 찾을 때 도로명주소로 폴백 (선택)
+
+`search/v1/local`(지역검색)은 **업체명 색인** 기반이라, 등록 안 된 소규모 가게는
+캡션에 정확한 주소가 적혀 있어도 상호명 검색만으로는 못 찾습니다. 이 경우
+캡션 속 실제 주소를 **NCP Maps의 Geocoding API**로 좌표 변환해서 마지막으로 한 번 더
+시도하도록 `analyze-link`가 되어 있어요. 다음 시크릿이 있어야 동작합니다.
+
+1. [NAVER Cloud Platform 콘솔](https://console.ncloud.com) → **Services → Maps** →
+   8번에서 만든 Application(또는 새 Application)에 **Geocoding** API를 추가로 체크
+   (이용 신청이 안 되어 있으면 8-1처럼 카드 등록 후 진행)
+2. 그 Application의 **Client ID / Client Secret**을 복사
+   (Client ID는 8-3에서 쓴 `VITE_NAVER_MAP_CLIENT_ID`와 같은 값이어도 됩니다 —
+   다만 이건 GitHub가 아니라 **Supabase 시크릿**으로 따로 등록해야 해요)
+3. Supabase 대시보드 → **Edge Functions → Secrets** 에 2개 추가
+
+   | Name | Value |
+   |---|---|
+   | `NAVER_MAPS_CLIENT_ID` | Maps Application의 Client ID |
+   | `NAVER_MAPS_CLIENT_SECRET` | 같은 Application의 Client Secret |
+
+4. `analyze-link` 함수를 [최신 코드](./supabase/functions/analyze-link/index.ts)로 재배포
+
+> 이 시크릿이 없으면 이 단계만 조용히 건너뛰고, 기존처럼 상호명 검색 결과(또는 실패 사유)만
+> 돌아옵니다. 7-2의 검색 API 키(`NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET`)와는 **다른 상품의
+> 다른 키**라서 헷갈리지 않도록 이름을 `NAVER_MAPS_*`로 분리했습니다.
+> 주소로 찾은 장소는 좌표만 정확하고 이름은 AI 추정이라, 다른 자동 채움 결과와 똑같이
+> **"⚠️ 확인해 주세요"** 배지가 붙습니다.
+
 ---
 
 ## 8. 지도를 네이버 지도로 바꾸기 (선택)
