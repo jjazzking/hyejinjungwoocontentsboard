@@ -24,7 +24,7 @@ export default function ShareToast({ state, onEdit, onDismiss }) {
   const tone = TONE[state.status] ?? TONE.failed
 
   return (
-    <div className="fixed inset-x-0 bottom-6 z-40 flex justify-center px-4">
+    <div className="fixed inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-40 flex justify-center px-4">
       <div className="flex w-full max-w-md items-center gap-3 rounded-2xl bg-white/95 p-4 shadow-lg ring-1 ring-neutral-900/10 backdrop-blur">
         <span className={`text-2xl ${state.status === 'saving' ? 'animate-pulse' : ''}`}>
           {tone.emoji}

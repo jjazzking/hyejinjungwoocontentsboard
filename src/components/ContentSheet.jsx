@@ -44,7 +44,7 @@ export default function ContentSheet({ content, place, color, onEdit, onClose })
         role="dialog"
         aria-modal="true"
         aria-label={content.title}
-        className="fixed inset-x-0 bottom-0 z-[1101] flex max-h-[85vh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
+        className="cb-sheet fixed inset-x-0 bottom-0 z-[1101] flex flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
       >
         {/* 폰에서 시트를 잡아 내리는 느낌을 주는 손잡이 (장식) */}
         <div className="flex justify-center pt-2.5 sm:hidden">
