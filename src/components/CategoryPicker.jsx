@@ -50,7 +50,7 @@ export default function CategoryPicker({ category, contents, onToggle, onCreateN
         role="dialog"
         aria-modal="true"
         aria-label={`'${category}' 태그에 카드 넣기`}
-        className="fixed inset-x-0 bottom-0 z-[1101] flex max-h-[85vh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
+        className="cb-sheet fixed inset-x-0 bottom-0 z-[1101] flex flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
       >
         <div className="flex justify-center pt-2.5 sm:hidden">
           <span aria-hidden="true" className="h-1 w-10 rounded-full bg-neutral-200" />
