@@ -128,6 +128,62 @@ async function findPlace(
   }
 }
 
+// ── NCP Maps Geocoding (주소 → 좌표) ────────────────────────────
+// 지역검색(search/v1/local)은 업체명 색인이라 도로명주소 문자열을 그대로
+// 넣으면 매칭이 안 되는 경우가 많다. 상호명 검색이 다 실패했을 때,
+// 캡션에 실제로 적힌 주소가 있으면 이 API로 좌표만이라도 찾는다.
+// 지도(VITE_NAVER_MAP_CLIENT_ID)와 같은 Maps Application을 쓰되,
+// 서버 호출이라 별도로 Client Secret이 필요하다.
+const GEOCODE_ENDPOINT = 'https://maps.apigw.ntruss.com/map-geocode/v2/geocode'
+
+async function geocodeAddress(
+  address: string,
+  name: string,
+): Promise<{ place: Place | null; debug: string }> {
+  const id = Deno.env.get('NAVER_MAPS_CLIENT_ID')
+  const secret = Deno.env.get('NAVER_MAPS_CLIENT_SECRET')
+  if (!id || !secret) {
+    return {
+      place: null,
+      debug: `'${address}' 주소 검색 못 함 — NAVER_MAPS_CLIENT_ID/NAVER_MAPS_CLIENT_SECRET 시크릿이 등록되어 있지 않음`,
+    }
+  }
+  try {
+    const res = await fetchWithTimeout(
+      `${GEOCODE_ENDPOINT}?query=${encodeURIComponent(address)}`,
+      { headers: { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret } },
+      8000,
+    )
+    if (!res.ok) {
+      const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 160)
+      console.error('geocode failed:', res.status, body)
+      return { place: null, debug: `'${address}' 주소 검색 실패 — ${res.status} ${body}` }
+    }
+    const data = await res.json()
+    const item = Array.isArray(data?.addresses) ? data.addresses[0] : null
+    if (!item) return { place: null, debug: `'${address}' 주소 검색 결과 없음` }
+    const lat = toCoord(item.y, 90)
+    const lng = toCoord(item.x, 180)
+    if (lat == null || lng == null) return { place: null, debug: `'${address}' 주소 좌표 형식이 이상함` }
+    return {
+      place: {
+        name: name || address,
+        address,
+        lat,
+        lng,
+        category: '',
+        url: `https://map.naver.com/p/search/${encodeURIComponent(name || address)}`,
+        source: 'AI',
+      },
+      debug: '',
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('geocode error:', err)
+    return { place: null, debug: `'${address}' 주소 검색 오류 — ${message}` }
+  }
+}
+
 /** YouTube/TikTok: 공개 oEmbed에서 제목(=캡션)과 썸네일을 가져온다. */
 async function fetchOEmbedMeta(endpoint: string): Promise<PostMeta | null> {
   try {
@@ -352,7 +408,8 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   "title": "카드 제목",
   "categories": ["..."],
   "memo": "간단한 메모",
-  "place_query": "지도에서 찾을 검색어"
+  "place_query": "지도에서 찾을 검색어",
+  "place_address": "캡션에 적힌 실제 도로명/지번주소"
 }
 
 규칙:
@@ -366,6 +423,9 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   ★ 캡션 본문에 적힌 가게 이름을 가장 우선하세요. "게시물 위치 태그"는 동네·건물처럼
   대충 찍힌 경우가 많으니, 캡션에 가게 이름이 있으면 태그 대신 그걸 쓰고
   태그는 지역명을 보태는 정도로만 참고하세요.
+- place_address: 캡션에 도로명주소나 지번주소가 문자 그대로 적혀 있으면 그대로 옮겨 적으세요
+  (예: "서울 마포구 와우산로 12"). 캡션에 주소가 없으면 빈 문자열로 두세요.
+  절대 지어내지 마세요 — 상호명으로 장소를 못 찾았을 때 주소로 좌표를 찾는 데만 씁니다.
 - 광고/해시태그 나열은 무시하고 실제 내용만 반영하세요.`
 
 Deno.serve(async (req) => {
@@ -439,6 +499,7 @@ Deno.serve(async (req) => {
   // 캡션 쪽이 안 나올 때의 폴백으로만 쓴다. 실패해도 초안은 그대로 돌려준다.
   const tagged = meta.locationName?.trim() ?? ''
   const guessed = typeof draft.place_query === 'string' ? draft.place_query.trim() : ''
+  const addressGuess = typeof draft.place_address === 'string' ? draft.place_address.trim() : ''
 
   const attempts: Array<{ query: string; source: Place['source'] }> = []
   if (guessed) attempts.push({ query: guessed, source: 'AI' })
@@ -454,6 +515,13 @@ Deno.serve(async (req) => {
     found = await findPlace(attempt.query, attempt.source)
     if (found.place) break
     reasons.push(found.debug)
+  }
+  // 상호명(캡션 검색어·위치태그)으로 다 실패했는데 캡션에 실제 주소가 있으면
+  // 지오코딩으로 좌표만이라도 찾는다 — 등록 안 된 소규모 가게에서 특히 유용하다.
+  if (!found.place && addressGuess) {
+    const geocoded = await geocodeAddress(addressGuess, guessed || tagged)
+    if (geocoded.place) found = geocoded
+    else reasons.push(geocoded.debug)
   }
   if (!found.place && reasons.length > 0) found = { place: null, debug: reasons.join(' / ') }
 
