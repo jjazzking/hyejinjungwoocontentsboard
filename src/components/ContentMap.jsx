@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import LeafletCanvas from './map/LeafletCanvas.jsx'
 import MapLegend from './map/MapLegend.jsx'
-import PinSheet from './map/PinSheet.jsx'
+import PinMiniCard from './map/PinMiniCard.jsx'
 import NaverCanvas from './map/NaverCanvas.jsx'
 import { useNaverMapsScript } from './map/useNaverMapsScript.js'
 import {
@@ -31,7 +31,8 @@ function loadDistrictsPref() {
  * - 핀 색 = 태그(첫 번째 카테고리), 핀 모양 = 상태(할 것은 테두리만, 한 것은 꽉 채움)
  *   → 어떤 태그가 무슨 색인지는 지도 아래 범례에 나온다
  * - 배경: 시·군·구 경계선 (범례 줄에서 켜고 끈다)
- * - 핀을 누르면 **목록에 있는 것과 같은 카드**가 시트로 올라온다 (사진·임베드·메모까지)
+ * - 핀을 누르면 지도 아래에 **축약 카드**가 뜨고, 그걸 누르면 풀 카드 시트로 넘어간다
+ *   (핀마다 풀 카드가 화면을 덮으면 지도를 훑기가 어렵다)
  * - 좌표가 없는 카드(이름만 저장한 장소, 장소 없는 카드)는 지도에 못 뜨므로
  *   아래에 "위치 없는 카드 N개"로 따로 안내한다
  *
@@ -40,7 +41,7 @@ function loadDistrictsPref() {
  * categories 는 **보드 전체**의 카테고리 목록 — 필터를 걸어도 태그 색이 안 바뀌게 하려면
  * 지금 보이는 카드가 아니라 전체 목록을 기준으로 색을 나눠야 한다.
  */
-export default function ContentMap({ items, categories = [], onEdit }) {
+export default function ContentMap({ items, categories = [], onOpen, onEdit }) {
   const [selectedKey, setSelectedKey] = useState(null)
   // 스크립트는 멀쩡했지만 실제로 그리다가 깨진 경우 (인증 실패한 반쪽짜리 지도 등)
   const [naverBroken, setNaverBroken] = useState(false)
@@ -153,16 +154,10 @@ export default function ContentMap({ items, categories = [], onEdit }) {
           onViewChange={handleViewChange}
           className="h-80 w-full bg-neutral-100 sm:h-96"
         />
-      </div>
 
-      <PinSheet
-        pin={selected}
-        onEdit={(content) => {
-          setSelectedKey(null)
-          onEdit?.(content)
-        }}
-        onClose={handleClose}
-      />
+        {/* 핀 탭 → 축약 카드 (누르면 풀 카드) */}
+        <PinMiniCard pin={selected} onOpen={() => onOpen?.(selected)} onClose={handleClose} />
+      </div>
 
       <MapLegend
         swatches={swatches}

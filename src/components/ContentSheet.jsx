@@ -1,22 +1,22 @@
 import { useEffect } from 'react'
-import ContentCard from '../ContentCard.jsx'
+import ContentCard from './ContentCard.jsx'
 
 /**
- * 핀을 눌렀을 때 올라오는 시트 — 안에 **실제 카드를 그대로** 보여준다.
+ * 풀 카드 시트 — 축약 카드를 눌렀을 때 올라오는 **원래 크기의 카드**.
  *
- * 예전엔 제목·날짜만 있는 작은 줄이었는데, 폰에서 그것만 봐서는
- * "이게 뭐였더라"가 해결되지 않았다. 사진·임베드·메모·태그가 다 필요하다.
+ * 목록도 지도도 이제 축약형으로 훑고, 자세히 볼 때만 이걸 연다.
+ * 두 곳에서 같은 시트를 쓰기 때문에 어디서 열든 보이는 게 똑같다.
  *
- * 지도 안이 아니라 **화면 전체 기준(fixed)** 으로 띄운다. 지도 컨테이너는
- * `overflow-hidden`이라 그 안에 두면 잘리고, 지도 높이가 320px뿐이라
- * 카드를 얹을 자리도 안 나온다.
- *
+ * 화면 전체 기준(fixed)으로 띄운다 — 지도 컨테이너는 `overflow-hidden`이라
+ * 그 안에 두면 잘리고, 목록 쪽에서도 카드 폭에 갇히면 안 된다.
  * 폰에서는 아래에서 올라오는 시트, 넓은 화면에서는 가운데 뜨는 창이다.
+ *
+ * place: 지도에서 열었을 때만 넘어온다 (어느 핀을 눌렀는지 머리말에 보여주려고)
  */
-export default function PinSheet({ pin, onEdit, onClose }) {
+export default function ContentSheet({ content, place, color, onEdit, onClose }) {
   // 시트가 떠 있는 동안 뒤 배경이 스크롤되면 화면이 따로 논다
   useEffect(() => {
-    if (!pin) return undefined
+    if (!content) return undefined
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKeyDown = (event) => event.key === 'Escape' && onClose()
@@ -25,12 +25,12 @@ export default function PinSheet({ pin, onEdit, onClose }) {
       document.body.style.overflow = previous
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [pin, onClose])
+  }, [content, onClose])
 
-  if (!pin) return null
+  if (!content) return null
 
-  const { content, place, color } = pin
   const isCompleted = content.status === 'COMPLETED'
+  const dot = color ?? '#94a3b8'
 
   return (
     <>
@@ -43,7 +43,7 @@ export default function PinSheet({ pin, onEdit, onClose }) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`${place.name} · ${content.title}`}
+        aria-label={content.title}
         className="fixed inset-x-0 bottom-0 z-[1101] flex max-h-[85vh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
       >
         {/* 폰에서 시트를 잡아 내리는 느낌을 주는 손잡이 (장식) */}
@@ -51,17 +51,15 @@ export default function PinSheet({ pin, onEdit, onClose }) {
           <span aria-hidden="true" className="h-1 w-10 rounded-full bg-neutral-200" />
         </div>
 
-        {/* 어느 핀을 눌렀는지 — 장소 이름은 카드가 아니라 여기서 보여준다 */}
-        <div className="flex items-start gap-2 border-b border-neutral-900/5 px-4 py-3">
+        <div className="flex items-center gap-2 border-b border-neutral-900/5 px-4 py-3">
           <span
             aria-hidden="true"
-            className="mt-1 h-3 w-3 shrink-0 rounded-full ring-1 ring-white"
-            style={{ background: isCompleted ? color : '#fff', boxShadow: `0 0 0 2.5px ${color}` }}
+            className="h-3 w-3 shrink-0 rounded-full"
+            style={{ background: isCompleted ? dot : '#fff', boxShadow: `0 0 0 2.5px ${dot}` }}
           />
-          {/* 주소는 아래 카드가 이미 보여주므로 여기서는 이름만 (한 카드에 장소가
-              여러 개일 때 어느 핀을 눌렀는지 알려주는 게 이 줄의 역할이다) */}
+          {/* 지도에서 열었으면 어느 장소의 핀이었는지, 목록에서 열었으면 그냥 제목 */}
           <p className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-900">
-            📍 {place.name}
+            {place ? `📍 ${place.name}` : content.title}
           </p>
           <button
             type="button"
@@ -73,14 +71,14 @@ export default function PinSheet({ pin, onEdit, onClose }) {
           </button>
         </div>
 
-        {/* 목록에 있는 것과 똑같은 카드. 시트 안에서는 여백·테두리만 걷어낸다 */}
+        {/* 목록에 쓰던 것과 똑같은 카드. 시트 안에서는 여백·테두리만 걷어낸다 */}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 [&>article]:mb-0 [&>article]:shadow-none [&>article]:ring-0">
-          {/* 시트 자체가 수정 버튼을 갖고 있으니 카드 위의 액션은 끈다 */}
+          {/* 시트가 수정 버튼을 갖고 있으니 카드 위의 액션은 끈다 */}
           <ContentCard content={content} showActions={false} />
         </div>
 
         <div className="flex gap-2 border-t border-neutral-900/5 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          {place.url && (
+          {place?.url && (
             <a
               href={place.url}
               target="_blank"
