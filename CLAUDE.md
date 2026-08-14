@@ -21,9 +21,9 @@ src/
   App.jsx                     최상위, Dashboard 렌더
   components/
     Dashboard.jsx             탭(PLANNING/COMPLETED) · 필터 · 카드 그리드 · 모달 제어
-    ContentCard.jsx           카드 1장 (사진/임베드/장소/카테고리)
+    ContentCard.jsx           카드 1장 (사진/임베드/장소/카테고리) + 상시 노출 액션
     ContentFormModal.jsx      카드 추가·수정 폼 (AI 자동 채움 진입점)
-    CategoryFilter.jsx        '할 일' 탭의 태그별 필터 칩
+    CategoryFilter.jsx        '할 일' 탭의 태그 칩 — 필터 + 태그 만들기(＋ 태그)
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
     ContentMap.jsx            지도 (lazy 로드) — 핀 계산·범례·시트·위치 없는 카드 안내
     map/NaverCanvas.jsx       네이버 지도 v3로 핀·경계선 그리기
@@ -89,6 +89,11 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 **실패는 화면에 이유를 남긴다.** 외부 API 실패는 500으로 던지지 말고 HTTP 200에
 `failed` / `detail` / `place_debug` 같은 한국어 사유를 담아 폼에 그대로 보여준다.
 사용자가 로그를 열지 않고도 원인을 알 수 있어야 한다.
+
+**편집 모드는 없다.** 카드의 ✏️ 수정은 항상 떠 있고, 나머지(완료 전환·순서 이동·삭제)는
+카드의 `⋯` 뒤에 접혀 있다. 예전엔 상단 '편집' 토글을 켜야 액션이 나왔는데 한 번 더 누르는
+단계가 번거로워서 없앴다. **액션을 새로 추가할 땐 넷을 다 펼치지 말고 `⋯` 안에 넣을 것** —
+카드마다 버튼 줄이 생기면 목록이 시끄러워진다.
 
 **AI 모델은 비용 때문에 `claude-haiku-4-5`를 쓴다.** 응답은 JSON만 반환하도록 강제하고,
 장소는 지어내지 말라는 규칙을 시스템 프롬프트에 유지한다.

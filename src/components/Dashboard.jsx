@@ -31,7 +31,7 @@ function formatDay(dateStr) {
  * - '할 것들'은 태그 칩으로, '한 것들'은 달력의 날짜로 걸러서 볼 수 있다
  * - 매소너리(컬럼) 레이아웃: 임베드 카드는 크게, 매뉴얼 카드는 컴팩트하게
  *   섞여 쌓이면서 컬럼 폭은 일정하게 유지된다
- * - 편집 모드 토글: 카드마다 ☰(위치 이동)/상태 전환/수정/삭제 버튼 + 새 컨텐츠 추가 버튼 노출
+ * - 카드 액션(✏️ 수정 + ⋯)은 항상 떠 있다 — '편집' 토글을 먼저 켜는 단계를 없앴다
  * - 위치 이동: ☰을 누르면 이동 모드 — 다른 카드를 누르면 그 앞으로, 맨 뒤 슬롯을 누르면 맨 뒤로
  * - 클립보드에서 SNS 링크를 발견하면 하단 배너로 카드 생성을 제안
  * - 다른 앱에서 '공유'로 들어오면(`?url=…`) 묻지 않고 바로 카드로 저장하고 결과만 알린다
@@ -47,7 +47,6 @@ export default function Dashboard({
   onMove,
 }) {
   const [activeTab, setActiveTab] = useState('PLANNING')
-  const [editMode, setEditMode] = useState(false)
   // modal: null(닫힘) | { mode: 'add', draft? } | { mode: 'edit', content }
   const [modal, setModal] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -72,11 +71,9 @@ export default function Dashboard({
   // 배열 순서가 곧 표시 순서 — 탭별로 걸러낸 뒤 필터를 적용한다
   const tabItems = useMemo(() => contents.filter((c) => c.status === activeTab), [contents, activeTab])
 
-  // 필터로 쓰던 태그가 사라지면(마지막 카드 삭제 등) 자동으로 전체 보기로 돌아간다
-  const activeCategory =
-    categoryFilter && tabItems.some((c) => (c.categories ?? []).includes(categoryFilter))
-      ? categoryFilter
-      : null
+  // 카드가 하나도 없는 태그도 골라둘 수 있어야 한다 — 방금 만든 태그에 첫 카드를
+  // 넣는 게 목적이라서. 목록에서 아예 사라진 태그만 전체 보기로 되돌린다.
+  const activeCategory = categoryFilter && categories.includes(categoryFilter) ? categoryFilter : null
 
   const filtered = useMemo(() => {
     if (activeTab === 'PLANNING') {
@@ -126,6 +123,10 @@ export default function Dashboard({
     }
     setModal(null)
   }
+
+  /** 카드 추가 폼 열기. 태그를 넘기면 그 태그가 미리 붙은 채로 시작한다 */
+  const openAddForm = (category) =>
+    setModal({ mode: 'add', draft: category ? { categories: [category] } : null })
 
   const handleDelete = (content) => {
     if (window.confirm(`'${content.title}' 컨텐츠를 삭제할까요?`)) {
@@ -188,28 +189,11 @@ export default function Dashboard({
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
       {/* 헤더 */}
-      <header className="relative mb-8 text-center">
+      <header className="mb-8 text-center">
         <h1 className="text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">
           혜진 <span className="text-rose-400">♥</span> 정우 컨텐츠 보드
         </h1>
         <p className="mt-2 text-sm text-neutral-500">우리 둘의 하고 싶은 것, 해낸 것들을 한곳에</p>
-
-        {/* 편집 모드 토글 */}
-        <button
-          type="button"
-          onClick={() => {
-            setEditMode((prev) => !prev)
-            setMovingId(null)
-          }}
-          aria-pressed={editMode}
-          className={`absolute right-0 top-0 rounded-full px-3.5 py-1.5 text-xs font-medium shadow-sm ring-1 transition-colors ${
-            editMode
-              ? 'bg-rose-400 text-white ring-rose-400 hover:bg-rose-500'
-              : 'bg-white text-neutral-600 ring-neutral-900/10 hover:bg-neutral-50'
-          }`}
-        >
-          {editMode ? '✔️ 편집 완료' : '✏️ 편집'}
-        </button>
       </header>
 
       {/* 탭 */}
@@ -255,7 +239,13 @@ export default function Dashboard({
       {/* 탭별 보기 필터: 할 것들 = 태그 칩, 한 것들 = 달력 */}
       {!loading &&
         (activeTab === 'PLANNING' ? (
-          <CategoryFilter items={tabItems} value={activeCategory} onChange={setCategoryFilter} />
+          <CategoryFilter
+            items={tabItems}
+            categories={categories}
+            value={activeCategory}
+            onChange={setCategoryFilter}
+            onAddCategory={addCategory}
+          />
         ) : (
           <CompletedCalendar items={tabItems} selectedDate={dateFilter} onSelect={setDateFilter} />
         ))}
@@ -282,7 +272,6 @@ export default function Dashboard({
             <ContentMap
               items={filtered}
               categories={categories}
-              editable={editMode}
               onEdit={(content) => setModal({ mode: 'edit', content })}
             />
           </Suspense>
@@ -312,33 +301,44 @@ export default function Dashboard({
               ? `'${activeCategory}' 태그가 붙은 카드가 없어요.`
               : `${formatDay(dateFilter)}에 기록한 카드가 없어요.`}
           </p>
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
-          >
-            전체 보기
-          </button>
-        </div>
-      ) : filtered.length > 0 || editMode ? (
-        <main className="columns-1 gap-6 sm:columns-2 lg:columns-3">
-          {/* 편집 모드일 때 맨 앞에 추가 카드 (컴팩트 사이즈) */}
-          {editMode && (
+          {/* 태그를 갓 만든 직후가 바로 이 화면이다 — 여기서 첫 카드를 넣을 수 있어야 한다 */}
+          <div className="flex flex-wrap justify-center gap-2">
+            {activeTab === 'PLANNING' && activeCategory && (
+              <button
+                type="button"
+                onClick={() => openAddForm(activeCategory)}
+                className="rounded-full bg-rose-400 px-4 py-1.5 text-xs font-medium text-white shadow transition-colors hover:bg-rose-500"
+              >
+                ＋ &apos;{activeCategory}&apos;에 카드 추가
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setModal({ mode: 'add' })}
-              className="mb-6 flex min-h-36 w-full break-inside-avoid flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-rose-200 bg-white/60 text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50"
+              onClick={resetFilters}
+              className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
             >
-              <span className="text-3xl">＋</span>
-              <span className="text-sm font-medium">새 컨텐츠 추가</span>
+              전체 보기
             </button>
-          )}
+          </div>
+        </div>
+      ) : (
+        <main className="columns-1 gap-6 sm:columns-2 lg:columns-3">
+          {/* 추가 카드는 항상 맨 앞에. 태그를 골라둔 상태면 그 태그를 달고 시작한다 */}
+          <button
+            type="button"
+            onClick={() => openAddForm(activeCategory)}
+            className="mb-6 flex min-h-24 w-full break-inside-avoid flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-rose-200 bg-white/60 text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50 sm:min-h-36 sm:gap-2"
+          >
+            <span className="text-2xl sm:text-3xl">＋</span>
+            <span className="text-sm font-medium">
+              {activeCategory ? `'${activeCategory}'에 카드 추가` : '새 컨텐츠 추가'}
+            </span>
+          </button>
 
           {filtered.map((content) => (
             <ContentCard
               key={content.id}
               content={content}
-              editable={editMode}
               moving={movingId === content.id}
               isMoveTarget={Boolean(movingId) && movingId !== content.id}
               onMoveStart={() => setMovingId((prev) => (prev === content.id ? null : content.id))}
@@ -360,25 +360,6 @@ export default function Dashboard({
             </button>
           )}
         </main>
-      ) : (
-        <div className="flex flex-col items-center gap-3 py-20 text-center">
-          <span className="text-5xl">🌱</span>
-          <p className="text-neutral-500">
-            {activeTab === 'PLANNING'
-              ? '아직 계획한 컨텐츠가 없어요. 릴스 보다가 꽂힌 거 바로 추가해 보세요!'
-              : '완료한 컨텐츠가 없어요. 첫 번째 추억을 만들러 가볼까요?'}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setEditMode(true)
-              setModal({ mode: 'add' })
-            }}
-            className="mt-2 rounded-full bg-rose-400 px-5 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-rose-500"
-          >
-            ＋ 컨텐츠 추가하기
-          </button>
-        </div>
       )}
 
       {/* 클립보드 링크 감지 배너 */}

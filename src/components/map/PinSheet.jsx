@@ -13,7 +13,7 @@ import ContentCard from '../ContentCard.jsx'
  *
  * 폰에서는 아래에서 올라오는 시트, 넓은 화면에서는 가운데 뜨는 창이다.
  */
-export default function PinSheet({ pin, editable, onEdit, onClose }) {
+export default function PinSheet({ pin, onEdit, onClose }) {
   // 시트가 떠 있는 동안 뒤 배경이 스크롤되면 화면이 따로 논다
   useEffect(() => {
     if (!pin) return undefined
@@ -75,7 +75,8 @@ export default function PinSheet({ pin, editable, onEdit, onClose }) {
 
         {/* 목록에 있는 것과 똑같은 카드. 시트 안에서는 여백·테두리만 걷어낸다 */}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 [&>article]:mb-0 [&>article]:shadow-none [&>article]:ring-0">
-          <ContentCard content={content} />
+          {/* 시트 자체가 수정 버튼을 갖고 있으니 카드 위의 액션은 끈다 */}
+          <ContentCard content={content} showActions={false} />
         </div>
 
         <div className="flex gap-2 border-t border-neutral-900/5 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -89,15 +90,13 @@ export default function PinSheet({ pin, editable, onEdit, onClose }) {
               지도에서 보기 ↗
             </a>
           )}
-          {editable && (
-            <button
-              type="button"
-              onClick={() => onEdit?.(content)}
-              className="rounded-full bg-rose-400 px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-rose-500"
-            >
-              ✏️ 카드 수정
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => onEdit?.(content)}
+            className="rounded-full bg-rose-400 px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-rose-500"
+          >
+            ✏️ 카드 수정
+          </button>
           <button
             type="button"
             onClick={onClose}
