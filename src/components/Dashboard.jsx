@@ -54,7 +54,7 @@ export default function Dashboard({
   const [categoryFilter, setCategoryFilter] = useState(null)
   const [dateFilter, setDateFilter] = useState(null)
 
-  const { suggestion, resolveSuggestion } = useClipboardSuggestion(contents)
+  const { suggestion, resolveSuggestion, checkClipboard, notice } = useClipboardSuggestion(contents)
   const { categories, addCategory } = useCategories(contents)
 
   // 배열 순서가 곧 표시 순서 — 탭별로 걸러낸 뒤 필터를 적용한다
@@ -139,6 +139,16 @@ export default function Dashboard({
           혜진 <span className="text-rose-400">♥</span> 정우 컨텐츠 보드
         </h1>
         <p className="mt-2 text-sm text-neutral-500">우리 둘의 하고 싶은 것, 해낸 것들을 한곳에</p>
+
+        {/* 복사해 둔 SNS 링크 확인 — 브라우저 붙여넣기 팝업은 이 버튼을 눌렀을 때만 뜬다 */}
+        <button
+          type="button"
+          onClick={checkClipboard}
+          title="복사해 둔 인스타/유튜브/틱톡 링크로 카드 만들기"
+          className="mt-3 rounded-full bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
+        >
+          📋 복사한 링크로 카드 만들기
+        </button>
 
         {/* 편집 모드 토글 */}
         <button
@@ -329,6 +339,7 @@ export default function Dashboard({
       {/* 클립보드 링크 감지 배너 */}
       <ClipboardPrompt
         suggestion={suggestion}
+        notice={notice}
         analyzing={analyzing}
         onCreate={handleCreateFromClipboard}
         onDismiss={resolveSuggestion}
