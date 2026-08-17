@@ -64,7 +64,7 @@ export default function Dashboard({
   // 기존 카드를 이 태그에 넣는 창: null | 태그 이름
   const [picker, setPicker] = useState(null)
 
-  const { suggestion, resolveSuggestion } = useClipboardSuggestion(contents)
+  const { suggestion, resolveSuggestion, checkClipboard, notice } = useClipboardSuggestion(contents)
   const { categories, addCategory } = useCategories(contents)
   // 축약 카드·지도 핀이 같은 태그 색을 쓰도록 한곳에서 만든다
   const colorMap = useMemo(() => buildCategoryColorMap(categories), [categories])
@@ -221,6 +221,16 @@ export default function Dashboard({
           혜진 <span className="text-rose-400">♥</span> 정우 컨텐츠 보드
         </h1>
         <p className="mt-2 text-sm text-neutral-500">우리 둘의 하고 싶은 것, 해낸 것들을 한곳에</p>
+
+        {/* 복사해 둔 SNS 링크 확인 — 브라우저 붙여넣기 팝업은 이 버튼을 눌렀을 때만 뜬다 */}
+        <button
+          type="button"
+          onClick={checkClipboard}
+          title="복사해 둔 인스타/유튜브/틱톡 링크로 카드 만들기"
+          className="mt-3 rounded-full bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
+        >
+          📋 복사한 링크로 카드 만들기
+        </button>
       </header>
 
       {/* 탭 */}
@@ -435,6 +445,7 @@ export default function Dashboard({
 
       <ClipboardPrompt
         suggestion={suggestion}
+        notice={notice}
         analyzing={analyzing}
         onCreate={handleCreateFromClipboard}
         onDismiss={resolveSuggestion}

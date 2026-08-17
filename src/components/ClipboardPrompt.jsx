@@ -7,9 +7,20 @@ const PLATFORM_INFO = {
 /**
  * 클립보드에서 SNS 링크를 발견했을 때 화면 하단에 뜨는 확인 배너.
  * '카드 만들기'를 누르면 게시물 분석 후 추가 폼이 미리 채워진 채 열린다.
+ * 제안이 없고 안내 문구(notice)만 있으면 같은 자리에 잠깐 문구만 띄운다.
  */
-export default function ClipboardPrompt({ suggestion, analyzing, onCreate, onDismiss }) {
-  if (!suggestion) return null
+export default function ClipboardPrompt({ suggestion, notice, analyzing, onCreate, onDismiss }) {
+  if (!suggestion) {
+    if (!notice) return null
+    return (
+      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4">
+        <p className="rounded-full bg-neutral-900/85 px-4 py-2 text-xs font-medium text-white shadow-lg">
+          {notice}
+        </p>
+      </div>
+    )
+  }
+
   const platform = PLATFORM_INFO[suggestion.platform] ?? { name: '링크', emoji: '🔗' }
 
   return (
