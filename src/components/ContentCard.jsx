@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import MediaEmbed from './embeds/MediaEmbed.jsx'
 import PhotoCarousel from './PhotoCarousel.jsx'
 
@@ -13,43 +14,84 @@ function formatDate(dateStr) {
   return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long' }).format(date)
 }
 
-function EditActions({ isCompleted, moving, onMoveStart, onToggleStatus, onEdit, onDelete }) {
+const actionClass =
+  'rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium shadow backdrop-blur transition-colors'
+
+/**
+ * 카드 액션 — **항상 떠 있다.**
+ *
+ * 예전엔 상단의 '편집' 토글을 켜야 나왔는데, 고칠 때마다 두 번 누르는 게 번거로웠다.
+ * 대신 자주 쓰는 ✏️만 늘 보여주고, 가끔 쓰는 것(완료 전환·순서 이동·삭제)은
+ * ⋯ 뒤에 접어둔다. 넷을 다 펼쳐두면 카드마다 버튼 줄이 생겨 목록이 시끄러워진다.
+ */
+function CardActions({ isCompleted, moving, onMoveStart, onToggleStatus, onEdit, onDelete }) {
+  const [open, setOpen] = useState(false)
+
+  // 이동 모드로 들어가면 더보기는 접는다 (지도·목록에서 다음 동작은 카드 고르기다)
+  useEffect(() => {
+    if (moving) setOpen(false)
+  }, [moving])
+
+  if (open) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={onToggleStatus}
+          title={isCompleted ? '할 것으로 되돌리기' : '완료로 표시하기'}
+          className={`${actionClass} text-neutral-700 hover:bg-white`}
+        >
+          {isCompleted ? '↩️ 되돌리기' : '✅ 완료!'}
+        </button>
+        <button
+          type="button"
+          onClick={onMoveStart}
+          aria-pressed={moving}
+          title="위치 이동"
+          className={`${actionClass} text-neutral-700 hover:bg-white`}
+        >
+          ☰
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          title="삭제"
+          className={`${actionClass} text-red-500 hover:bg-red-50`}
+        >
+          🗑️
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="메뉴 접기"
+          className={`${actionClass} text-neutral-500 hover:bg-white`}
+        >
+          ✕
+        </button>
+      </>
+    )
+  }
+
   return (
     <>
       <button
         type="button"
-        onClick={onMoveStart}
-        aria-pressed={moving}
-        title={moving ? '이동 취소' : '위치 이동'}
-        className={`rounded-full px-2.5 py-1 text-xs font-medium shadow backdrop-blur transition-colors ${
-          moving ? 'bg-rose-400 text-white hover:bg-rose-500' : 'bg-white/90 text-neutral-700 hover:bg-white'
-        }`}
-      >
-        ☰
-      </button>
-      <button
-        type="button"
-        onClick={onToggleStatus}
-        title={isCompleted ? '할 것으로 되돌리기' : '완료로 표시하기'}
-        className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-neutral-700 shadow backdrop-blur transition-colors hover:bg-white"
-      >
-        {isCompleted ? '↩️ 되돌리기' : '✅ 완료!'}
-      </button>
-      <button
-        type="button"
         onClick={onEdit}
         title="수정"
-        className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-neutral-700 shadow backdrop-blur transition-colors hover:bg-white"
+        className={`${actionClass} text-neutral-700 hover:bg-white`}
       >
         ✏️ 수정
       </button>
       <button
         type="button"
-        onClick={onDelete}
-        title="삭제"
-        className="rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-red-500 shadow backdrop-blur transition-colors hover:bg-red-50"
+        onClick={() => setOpen(true)}
+        aria-label="더보기 (완료 전환 · 위치 이동 · 삭제)"
+        aria-expanded={false}
+        className={`${actionClass} ${
+          moving ? 'bg-rose-400 text-white hover:bg-rose-500' : 'text-neutral-500 hover:bg-white'
+        }`}
       >
-        🗑️
+        ⋯
       </button>
     </>
   )
@@ -65,12 +107,13 @@ function EditActions({ isCompleted, moving, onMoveStart, onToggleStatus, onEdit,
  *               (매소너리 컬럼에서 작은 카드 여러 장이 쌓여 큰 카드와 맞물린다)
  *
  * 미디어 우선순위: COMPLETED+사진 → 캐러셀, 임베드 가능 → 임베드, 그 외 → 컴팩트
- * 편집 모드(editable)에서는 ☰(위치 이동) / 상태 전환 / 수정 / 삭제 버튼이 표시된다.
+ * 액션(✏️ 수정 + ⋯)은 **항상** 떠 있다 — 편집 모드를 켜는 단계를 없앴다.
  * moving: 이 카드가 이동 중 / isMoveTarget: 다른 카드의 이동 목적지로 선택 가능
  */
 export default function ContentCard({
   content,
-  editable = false,
+  // 지도 시트처럼 카드만 보여주면 되는 곳에서는 액션을 숨긴다
+  showActions = true,
   moving = false,
   isMoveTarget = false,
   onMoveStart,
@@ -91,11 +134,7 @@ export default function ContentCard({
   return (
     <article
       className={`relative mb-6 flex break-inside-avoid flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 transition-shadow hover:shadow-md ${
-        moving
-          ? 'opacity-70 ring-2 ring-rose-400'
-          : editable
-            ? 'ring-2 ring-rose-200'
-            : 'ring-neutral-900/5'
+        moving ? 'opacity-70 ring-2 ring-rose-400' : 'ring-neutral-900/5'
       }`}
     >
       {/* 이동 모드: 이 카드를 눌러 이동 중인 카드를 이 앞으로 배치 */}
@@ -119,11 +158,11 @@ export default function ContentCard({
         <MediaEmbed platform={reference_platform} url={reference_url} title={title} />
       )}
 
-      {/* 편집 모드 액션 버튼: 미디어가 있으면 그 위에 띄우고, 컴팩트 카드는 본문 위 줄로 */}
-      {editable &&
+      {/* 액션: 미디어가 있으면 그 위에 띄우고, 컴팩트 카드는 본문 위 줄로 */}
+      {showActions &&
         (compact ? (
-          <div className="flex gap-1.5 px-4 pt-3">
-            <EditActions
+          <div className="flex justify-end gap-1.5 px-4 pt-3">
+            <CardActions
               isCompleted={isCompleted}
               moving={moving}
               onMoveStart={onMoveStart}
@@ -133,8 +172,8 @@ export default function ContentCard({
             />
           </div>
         ) : (
-          <div className="absolute left-2 top-2 z-10 flex gap-1.5">
-            <EditActions
+          <div className="absolute right-2 top-2 z-10 flex gap-1.5">
+            <CardActions
               isCompleted={isCompleted}
               moving={moving}
               onMoveStart={onMoveStart}

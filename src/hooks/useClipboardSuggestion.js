@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { extractSnsUrl, detectPlatform } from '../utils/linkAnalyzer.js'
+import { extractSnsUrl, detectPlatform, normalizeSnsUrl } from '../utils/linkAnalyzer.js'
 
 /**
  * 클립보드에 아직 보드에 없는 인스타/유튜브/틱톡 링크가 있으면 제안(suggestion)을 띄운다.
@@ -36,7 +36,12 @@ export function useClipboardSuggestion(contents) {
   const applyText = useCallback((text, { force = false } = {}) => {
     const url = extractSnsUrl(text)
     if (!url) return 'NO_LINK'
-    if (contentsRef.current.some((c) => c.reference_url === url)) {
+    // extractSnsUrl은 정규화된 주소를 주므로, 보드 쪽도 같은 기준으로 맞춰 비교한다
+    if (
+      contentsRef.current.some(
+        (c) => c.reference_url && normalizeSnsUrl(c.reference_url) === url,
+      )
+    ) {
       handledRef.current.add(url)
       return 'ALREADY_ADDED'
     }

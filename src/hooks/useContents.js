@@ -78,8 +78,11 @@ function useLocalContents() {
     }
   }, [contents])
 
+  // 만든 카드의 id를 돌려준다 — 공유로 바로 저장했을 때 '수정하기'로 열어주기 위해
   const addContent = (data) => {
-    setContents((prev) => [...prev, { ...data, id: newId() }])
+    const id = newId()
+    setContents((prev) => [...prev, { ...data, id }])
+    return id
   }
 
   const updateContent = (id, data) => {
@@ -202,6 +205,7 @@ function useSupabaseContents() {
     }
   }, [refetch])
 
+  // 만든 카드의 id를 돌려준다 — 공유로 바로 저장했을 때 '수정하기'로 열어주기 위해
   const addContent = (data) => {
     const row = {
       ...toRow(data),
@@ -210,6 +214,7 @@ function useSupabaseContents() {
     }
     setContents((prev) => [...prev, row])
     run(supabase.from('contents').insert(row))
+    return row.id
   }
 
   const updateContent = (id, data) => {
