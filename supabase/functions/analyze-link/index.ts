@@ -451,6 +451,7 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   "categories": ["..."],
   "memo": "간단한 메모",
   "place_query": "지도에서 찾을 검색어",
+  "place_name": "가게/장소 이름만 (지역명 없이)",
   "place_address": "캡션에 적힌 실제 도로명/지번주소"
 }
 
@@ -465,10 +466,17 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   ★ 캡션 본문에 적힌 가게 이름을 가장 우선하세요. "게시물 위치 태그"는 동네·건물처럼
   대충 찍힌 경우가 많으니, 캡션에 가게 이름이 있으면 태그 대신 그걸 쓰고
   태그는 지역명을 보태는 정도로만 참고하세요.
+  ★ 한국 맛집 계정은 가게 이름을 캡션 맨 끝에 "📍/🚩 가게이름 (지역)" 형태로 적거나
+  해시태그(#청량리맛집 #페스카데리아)로만 남기는 경우가 아주 많습니다.
+  이 두 곳을 반드시 확인해서 지역명과 가게 이름을 조합하세요.
+- place_name: place_query에서 지역명을 뺀 가게/장소 이름만 쓰세요 (예: "만석닭강정").
+  지역명을 붙인 검색이 실패했을 때 이 이름만으로 다시 찾아보는 데 씁니다.
+  가게 이름을 모르면 빈 문자열로 두세요.
 - place_address: 캡션에 도로명주소나 지번주소가 문자 그대로 적혀 있으면 그대로 옮겨 적으세요
   (예: "서울 마포구 와우산로 12"). 캡션에 주소가 없으면 빈 문자열로 두세요.
   절대 지어내지 마세요 — 상호명으로 장소를 못 찾았을 때 주소로 좌표를 찾는 데만 씁니다.
-- 광고/해시태그 나열은 무시하고 실제 내용만 반영하세요.`
+- 광고 문구는 memo에 옮기지 마세요. 다만 해시태그는 지역명·가게 이름을 알아내는 근거로는
+  적극적으로 활용하세요 (memo·title의 말투에만 섞지 않으면 됩니다).`
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
@@ -580,12 +588,17 @@ Deno.serve(async (req) => {
   // 캡션 쪽이 안 나올 때의 폴백으로만 쓴다. 실패해도 초안은 그대로 돌려준다.
   const tagged = meta.locationName?.trim() ?? ''
   const guessed = typeof draft.place_query === 'string' ? draft.place_query.trim() : ''
+  const nameOnly = typeof draft.place_name === 'string' ? draft.place_name.trim() : ''
   const addressGuess = typeof draft.place_address === 'string' ? draft.place_address.trim() : ''
 
   const attempts: Array<{ query: string; source: Place['source'] }> = []
   if (guessed) attempts.push({ query: guessed, source: 'AI' })
   // 위치 태그가 캡션 검색어와 사실상 같으면 같은 검색을 두 번 하지 않는다
   if (tagged && tagged !== guessed) attempts.push({ query: tagged, source: 'INSTAGRAM' })
+  // 갓 오픈한 가게는 "지역명 + 상호명"으로는 색인에 안 잡히는 일이 많다.
+  // 마지막으로 상호명만 넣어 한 번 더 찾아본다 (동명 업소가 걸릴 수 있어 순서는 맨 뒤).
+  if (nameOnly && nameOnly !== guessed && nameOnly !== tagged)
+    attempts.push({ query: nameOnly, source: 'AI' })
 
   let found: { place: Place | null; debug: string } = {
     place: null,
