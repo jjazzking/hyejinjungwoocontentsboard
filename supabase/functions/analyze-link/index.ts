@@ -43,6 +43,22 @@ function detectPlatform(url: string) {
   return 'NONE'
 }
 
+/**
+ * 공유 버튼으로 복사한 링크에 붙어 오는 추적 파라미터(igsh·igsi·utm_* 등)를 떼어낸다.
+ * 인스타그램 본체는 무시하지만 미러·Apify 쪽은 그대로 넘기면 매칭에 실패할 수 있어
+ * 수집 직전에 한 번 정리한다. 카드에 저장되는 reference_url은 원본 그대로 둔다.
+ */
+function normalizeUrl(raw: string) {
+  try {
+    const parsed = new URL(raw)
+    parsed.search = ''
+    parsed.hash = ''
+    return parsed.toString()
+  } catch {
+    return raw
+  }
+}
+
 interface PostMeta {
   caption: string
   imageUrl: string | null
@@ -51,6 +67,8 @@ interface PostMeta {
    * 경우가 많아, 캡션에서 뽑은 검색어가 실패했을 때의 폴백으로만 쓴다.
    */
   locationName?: string | null
+  /** 어느 수집 경로로 얻었는지 (실패 사유를 화면에 보여줄 때 쓴다) */
+  via?: string
 }
 
 interface Place {
@@ -348,14 +366,32 @@ async function fetchInstagramApifyMeta(url: string): Promise<PostMeta | null> {
 
 /**
  * 로그인 벽·에러 페이지에서 나오는 껍데기 문구를 캡션으로 착각하지 않도록 거른다.
- * (여기서 걸러야 다음 수집 경로로 넘어간다)
+ * (여기서 걸러야 다음 수집 경로로 넘어간다 — 통과시켜 버리면 og 단계에서 바로 끝나서
+ *  embed·미러·Apify를 아예 시도하지 않는다)
  */
-const JUNK_CAPTION = /^(instagram|로그인|login|see this|이 사진|이 게시물|something went wrong|page not found)/i
+const JUNK_CAPTION = [
+  /^(instagram|로그인|login|log ?in|sign ?up|가입|see this|이 사진|이 게시물|something went wrong|page not found)/i,
+  /(로그인하여|계정이 없으신가요|see photos and videos from friends|log in to (see|watch|continue)|create an account)/i,
+]
+
+/**
+ * og:description은 캡션이 없어도 통계 문구만 채워져 내려온다.
+ *   "12K likes, 340 comments - username on December 5, 2025"
+ *   "좋아요 12만개, 댓글 340개 - 2025년 12월 5일 username님의 Instagram 게시물"
+ * 실제 캡션은 그 뒤에 `: "…"` 형태로 붙는데, 릴스는 이 부분이 빠진 채 오는 일이 잦다.
+ * 통계만 있는 문구를 캡션으로 받아들이면 AI가 볼 내용이 없어 뻔한 제목만 나오므로
+ * 캡션이 붙어 있을 때만 인정하고, 아니면 다음 수집 경로로 넘긴다.
+ */
+const STATS_PREFIX = /^\s*(\d[\d,.]*\s*[KkMm]?\s*(likes?|comments?)|좋아요\s*\d|댓글\s*\d)/i
+const HAS_QUOTED_CAPTION = /:\s*["“'']/
 
 function isUsefulCaption(caption: string | undefined) {
   if (!caption) return false
   const trimmed = caption.trim()
-  return trimmed.length >= 15 && !JUNK_CAPTION.test(trimmed)
+  if (trimmed.length < 15) return false
+  if (JUNK_CAPTION.some((pattern) => pattern.test(trimmed))) return false
+  if (STATS_PREFIX.test(trimmed) && !HAS_QUOTED_CAPTION.test(trimmed)) return false
+  return true
 }
 
 /**
@@ -363,24 +399,30 @@ function isUsefulCaption(caption: string | undefined) {
  * (무료 경로를 먼저 써서 Apify 크레딧 소모를 최소화한다)
  */
 async function fetchInstagramMeta(url: string): Promise<PostMeta | null> {
+  const attempts: Array<[string, (url: string) => Promise<PostMeta | null>]> = [
+    ['og 태그', fetchInstagramOgMeta],
+    ['임베드 페이지', fetchInstagramEmbedMeta],
+    ['임베드 미러', fetchInstagramMirrorMeta],
+    ['Apify 수집', fetchInstagramApifyMeta],
+  ]
   let fallback: PostMeta | null = null
-  for (const attempt of [
-    fetchInstagramOgMeta,
-    fetchInstagramEmbedMeta,
-    fetchInstagramMirrorMeta,
-    fetchInstagramApifyMeta,
-  ]) {
+  const tried: string[] = []
+  for (const [label, attempt] of attempts) {
     const meta = await attempt(url)
     if (isUsefulCaption(meta?.caption)) {
       return {
         caption: meta!.caption,
         imageUrl: meta!.imageUrl ?? fallback?.imageUrl ?? null,
         locationName: meta!.locationName ?? fallback?.locationName ?? null,
+        via: label,
       }
     }
+    tried.push(meta?.caption || meta?.imageUrl ? `${label}: 캡션 못 읽음` : `${label}: 응답 없음`)
     if (meta && !fallback && (meta.caption || meta.imageUrl)) fallback = meta
   }
-  return fallback
+  // Apify 토큰이 없으면 마지막 경로는 시도조차 못 한다 — 사유에 같이 남긴다
+  if (!Deno.env.get('APIFY_TOKEN')) tried[tried.length - 1] = 'Apify 수집: APIFY_TOKEN 시크릿 없음'
+  return fallback ? { ...fallback, via: tried.join(' / ') } : null
 }
 
 async function fetchPostMeta(url: string, platform: string): Promise<PostMeta | null> {
@@ -449,12 +491,24 @@ Deno.serve(async (req) => {
   if (!pastedCaption && platform === 'NONE') return json(400, { error: 'unsupported platform' })
   const categories = Array.isArray(body.categories) ? body.categories.filter(Boolean) : []
 
-  const meta = pastedCaption
+  const meta: PostMeta | null = pastedCaption
     ? { caption: pastedCaption, imageUrl: null }
-    : await fetchPostMeta(url!, platform)
+    : await fetchPostMeta(normalizeUrl(url!), platform)
   if (!meta?.caption && !meta?.imageUrl) {
-    return json(422, { error: 'could not read the post (login-only or deleted?)' })
+    // 500으로 던지지 않는다 — 폼에서 이유를 그대로 보여줄 수 있어야 한다
+    return json(200, {
+      failed: '게시물 내용을 읽지 못했어요 (비공개·삭제됐거나 인스타그램이 서버 접근을 막았어요)',
+      detail: meta?.via ?? '',
+      title: '',
+      categories: [],
+      memo: '',
+      places: [],
+      place_debug: '',
+    })
   }
+  // 캡션 없이 썸네일만 건진 경우 — AI가 볼 정보가 거의 없다는 걸 폼에 알려준다
+  const captionUsable = isUsefulCaption(meta.caption)
+  const captionDetail = captionUsable ? '' : `캡션 수집 실패 — ${meta.via ?? '경로 불명'}`
 
   const client = new Anthropic({ apiKey })
   const userContent: Anthropic.ContentBlockParam[] = [
@@ -482,16 +536,43 @@ Deno.serve(async (req) => {
     } catch (err) {
       if (content.length === userContent.length && meta.imageUrl) continue
       console.error('anthropic error:', err)
-      return json(502, { error: 'AI analysis failed' })
+      const message = err instanceof Error ? err.message : String(err)
+      return json(200, {
+        failed: 'AI 분석에 실패했어요',
+        detail: message.slice(0, 200),
+        title: '',
+        categories: [],
+        memo: '',
+        places: [],
+        place_debug: '',
+      })
     }
   }
-  if (!responseText) return json(502, { error: 'AI analysis failed' })
+  if (!responseText) {
+    return json(200, {
+      failed: 'AI 분석에 실패했어요',
+      detail: '응답이 비어 있어요',
+      title: '',
+      categories: [],
+      memo: '',
+      places: [],
+      place_debug: '',
+    })
+  }
 
   let draft: Record<string, unknown>
   try {
     draft = parseDraftJson(responseText)
   } catch {
-    return json(502, { error: 'AI returned an unexpected format' })
+    return json(200, {
+      failed: 'AI가 예상 못 한 형식으로 답했어요',
+      detail: responseText.replace(/\s+/g, ' ').slice(0, 200),
+      title: '',
+      categories: [],
+      memo: '',
+      places: [],
+      place_debug: '',
+    })
   }
 
   // 장소 찾기: AI가 캡션에서 뽑은 검색어를 먼저 쓴다.
@@ -526,6 +607,7 @@ Deno.serve(async (req) => {
   if (!found.place && reasons.length > 0) found = { place: null, debug: reasons.join(' / ') }
 
   return json(200, {
+    detail: captionDetail,
     title: typeof draft.title === 'string' ? draft.title.trim() : '',
     categories: Array.isArray(draft.categories)
       ? draft.categories.filter((c: unknown) => typeof c === 'string' && categories.includes(c))

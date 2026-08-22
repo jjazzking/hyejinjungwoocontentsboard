@@ -49,11 +49,14 @@ export default function ContentFormModal({
   const [aiBusy, setAiBusy] = useState(false)
   // 자동 장소를 못 찾았을 때 서버가 알려준 이유 (저장 대상은 아님)
   const [placeDebug, setPlaceDebug] = useState('')
+  // 링크 분석이 실패했거나 캡션을 못 읽었을 때의 사유 (저장 대상은 아님)
+  const [analysisNote, setAnalysisNote] = useState('')
 
   useEffect(() => {
     if (initial) {
-      const { place_debug, ...rest } = initial
+      const { place_debug, analysis_note, ...rest } = initial
       setPlaceDebug(place_debug ?? '')
+      setAnalysisNote(analysis_note ?? '')
       setForm({
         ...rest,
         categories: initial.categories ?? [],
@@ -103,10 +106,12 @@ export default function ContentFormModal({
     setAiBusy(true)
     const draft = await analyzeCaption(aiCaption, form.reference_url, categoryOptions)
     setAiBusy(false)
-    if (!draft) {
-      window.alert('AI 분석에 실패했어요. 잠시 후 다시 시도해 주세요.')
+    if (!draft || draft.failed) {
+      setAnalysisNote([draft?.failed, draft?.detail].filter(Boolean).join(' — '))
       return
     }
+    setAnalysisNote('')
+    setPlaceDebug(draft.place_debug ?? '')
     setForm((prev) => {
       const known = new Set((prev.places ?? []).map((p) => p.name))
       return {
@@ -174,8 +179,19 @@ export default function ContentFormModal({
         </h2>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* 링크 분석이 왜 안 됐는지 화면에 그대로 남긴다 (로그를 열지 않아도 알 수 있게) */}
+          {analysisNote && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+              ⚠️ 링크에서 내용을 자동으로 채우지 못했어요.
+              <br />
+              {analysisNote}
+              <br />
+              게시물 글을 복사해서 아래에 붙여넣으면 그걸로 채워드릴게요.
+            </p>
+          )}
+
           {/* 캡션 붙여넣기 → AI 자동 작성 (인스타 등에서 서버 수집이 막혔을 때의 경로) */}
-          {SHOW_AI_CAPTION && isSupabaseConfigured && (
+          {(SHOW_AI_CAPTION || analysisNote) && isSupabaseConfigured && (
             <div className="rounded-xl border border-dashed border-rose-200 bg-rose-50/50 p-3">
               <label htmlFor="cf-ai-caption" className={labelClass}>
                 ✨ AI 자동 작성 — 게시물 글(캡션)을 붙여넣으면 제목·카테고리·메모를 채워줘요
