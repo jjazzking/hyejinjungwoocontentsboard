@@ -21,32 +21,51 @@ src/
   App.jsx                     최상위, Dashboard 렌더
   components/
     Dashboard.jsx             탭(PLANNING/COMPLETED) · 필터 · 카드 그리드 · 모달 제어
-    ContentCard.jsx           카드 1장 (사진/임베드/장소/카테고리)
+    ContentCard.jsx           풀 카드 1장 (사진/임베드/장소/카테고리) — 시트 안에서만 쓴다
+    ContentSummary.jsx        축약 카드 — 목록에 깔리는 한 줄 요약 + 상시 노출 액션
+    ContentSheet.jsx          축약 카드를 누르면 뜨는 풀 카드 시트 (목록·지도 공용)
+    CategoryPicker.jsx        '이 태그에 넣을 카드 고르기' 창 (기존 카드 토글)
     ContentFormModal.jsx      카드 추가·수정 폼 (AI 자동 채움 진입점)
-    CategoryFilter.jsx        '할 일' 탭의 태그별 필터 칩
+    CategoryFilter.jsx        '할 일' 탭의 태그 칩 — 필터 + 태그 만들기(＋ 태그)
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
-    ContentMap.jsx            지도 (lazy 로드) — 핀 계산·미니 카드·위치 없는 카드 안내
-    map/NaverCanvas.jsx       네이버 지도 v3로 핀 그리기
-    map/LeafletCanvas.jsx     OSM 폴백으로 핀 그리기 (같은 props)
+    ContentMap.jsx            지도 (lazy 로드) — 핀 계산·범례·시트·위치 없는 카드 안내
+    map/NaverCanvas.jsx       네이버 지도 v3로 핀·경계선 그리기
+    map/LeafletCanvas.jsx     OSM 폴백으로 핀·경계선 그리기 (같은 props)
     map/useNaverMapsScript.js 네이버 스크립트 로더 (off/loading/ready/failed)
-    map/pin.js                두 지도가 공유하는 핀 마크업
+    map/pin.js                두 지도가 공유하는 핀 마크업 (태그 색 · 상태별 채움)
+    map/overlays.js           시·군·구 경계 데이터 로더 · 스타일 · 화면 컬링
+    map/MapLegend.jsx         지도 아래 범례 + 경계 on/off 스위치
+    map/PinMiniCard.jsx       핀 탭 → 지도 위 축약 카드 (누르면 ContentSheet)
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
+    ShareToast.jsx            공유로 받은 링크의 저장 결과 알림 (+ 수정하기)
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
   hooks/
     useContents.js            카드 CRUD (Supabase ↔ localStorage 이중 모드)
     useCategories.js          커스텀 카테고리
     useClipboardSuggestion.js 클립보드 감시
+    useSharedLink.js          공유(`?url=`/`?text=`)로 들어온 링크 1회 수신
   utils/
     linkAnalyzer.js           링크 → 카드 초안 (Edge Function 호출, oEmbed 폴백)
     placeSearch.js            장소 검색 Edge Function 호출
+    categoryColors.js         태그 → 지도 핀 색 (팔레트 · 카드 대표색)
     uploadPhoto.js            Supabase Storage 업로드
+  data/
+    districtBoundaries.json   시·군·구 경계선 (생성물 — 직접 고치지 말 것)
   lib/supabaseClient.js       설정 없으면 null → localStorage 모드
+public/
+  manifest.webmanifest        PWA + 안드로이드 공유 시트(share_target)
+  sw.js                       설치 조건만 채우는 빈 서비스 워커 (캐싱 안 함)
+  icon-*.png                  홈 화면 아이콘 (생성물)
+scripts/
+  build-map-overlays.mjs      위 JSON을 공개 데이터에서 만들어 내는 스크립트
 supabase/
   schema.sql                  테이블 · RLS · 마이그레이션 SQL
   functions/analyze-link/     Claude로 링크 분석 + 장소 자동 검색
   functions/place-search/     네이버 지역 검색 프록시
+  functions/instagram-webhook/ 인스타 DM 웹훅 (검증용 탐침 — payload를 로그로만 남긴다)
 docs/MAP_FEATURE.md           지도 기능 기획 노트 (아직 미구현 단계 포함)
+docs/SHARE_TARGET.md          인스타 공유 → 카드 (폰별 설치 방법 포함)
 SUPABASE_SETUP.md             공유 DB · Edge Function · 네이버 키 설정 안내
 ```
 
@@ -73,6 +92,16 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 **실패는 화면에 이유를 남긴다.** 외부 API 실패는 500으로 던지지 말고 HTTP 200에
 `failed` / `detail` / `place_debug` 같은 한국어 사유를 담아 폼에 그대로 보여준다.
 사용자가 로그를 열지 않고도 원인을 알 수 있어야 한다.
+
+**축약 → 풀 카드 두 단계다.** 목록과 지도는 축약 카드(`ContentSummary` / `PinMiniCard`)로
+훑고, 누르면 `ContentSheet`가 풀 카드를 띄운다. 목록을 전부 풀 카드로 깔면 임베드·사진
+때문에 한 화면에 두세 장밖에 안 들어와서 훑을 수가 없다. **풀 카드(`ContentCard`)는
+시트 안에서만 쓴다** — 목록에 직접 넣지 말 것.
+
+**편집 모드는 없다.** 카드의 ✏️ 수정은 항상 떠 있고, 나머지(완료 전환·순서 이동·삭제)는
+카드의 `⋯` 뒤에 접혀 있다. 예전엔 상단 '편집' 토글을 켜야 액션이 나왔는데 한 번 더 누르는
+단계가 번거로워서 없앴다. **액션을 새로 추가할 땐 넷을 다 펼치지 말고 `⋯` 안에 넣을 것** —
+카드마다 버튼 줄이 생기면 목록이 시끄러워진다.
 
 **AI 모델은 비용 때문에 `claude-haiku-4-5`를 쓴다.** 응답은 JSON만 반환하도록 강제하고,
 장소는 지어내지 말라는 규칙을 시스템 프롬프트에 유지한다.
@@ -107,6 +136,24 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
   **네이버 호출은 전부 try/catch로 감싼다.** 인증이 실패하면 반쯤 죽은 지도 객체가 남고,
   정리 중 `destroy()`가 던진 예외가 올라가면 React가 트리를 내려서 화면이 하얘진다.
   실패하면 `onFailure`로 알려 OSM으로 넘기고, 마지막 방어선으로 `MapErrorBoundary`를 둔다.
+- **시·군·구 경계 데이터** — **외부 API가 아니라 저장소에 넣어둔 JSON**(`src/data/`)이다.
+  런타임에 아무 데도 호출하지 않는다. `node scripts/build-map-overlays.mjs`로 공개 데이터에서
+  다시 만들 수 있고, 235KB라 경계를 처음 켤 때 동적 import로 따로 내려받는다.
+  **시 경계(주황)와 구 경계(회색) 두 단계**로 나눠 그린다 — 구를 먼저 깔고 시를 위에 얹는다.
+  화면에 걸치는 것만, 배율 10 이상에서만 그린다 (전국을 다 얹으면 폴리라인이 2,000개가 넘는다).
+  **JSON을 손으로 고치지 말고 스크립트를 고쳐서 다시 생성할 것.**
+- **인스타 DM 웹훅** — `instagram-webhook` 함수. **아직 검증 단계**로, 릴스를 DM으로
+  공유했을 때 payload에 원본 permalink가 들어오는지만 확인한다 (카드는 만들지 않는다).
+  Meta는 anon 키를 안 붙이므로 **이 함수만 JWT 검증을 꺼야** 하고, 그래서 공개 엔드포인트가 된다
+  — `META_APP_SECRET`으로 `X-Hub-Signature-256`을 검증하는 게 유일한 자물쇠다.
+  Meta는 200이 아니면 계속 재전송하므로 **무슨 일이 있어도 200을 돌려준다.**
+  설정 순서는 SUPABASE_SETUP.md 9번.
+- **공유로 카드 만들기** — 외부 API가 아니라 **브라우저 표준**이다.
+  안드로이드는 manifest의 `share_target`으로 공유 시트에 뜨고, 아이폰은 애플이
+  이 표준을 지원하지 않아 **단축어**로 같은 주소를 연다. 그래서 받는 쪽 코드는
+  `?url=`/`?text=`/`?title=` 세 칸을 훑는 `useSharedLink` 하나면 된다.
+  **인스타는 링크를 `url`이 아니라 `text`에 문장째로 넣어 보낸다** — 반드시 셋 다 볼 것.
+  `sw.js`에 캐싱을 넣지 말 것 (배포해도 옛 화면이 남는다). 설치 방법은 docs/SHARE_TARGET.md.
 - **네이버 지역 검색** — NCP **NAVER API HUB** 경유.
   `GET https://naverapihub.apigw.ntruss.com/search/v1/local`,
   헤더 `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY`.

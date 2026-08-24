@@ -58,6 +58,10 @@ export default function ContentFormModal({
       setPlaceDebug(place_debug ?? '')
       setAnalysisNote(analysis_note ?? '')
       setForm({
+        // 일부 칸만 채운 초안(예: 태그만 지정하고 여는 경우)도 들어오므로
+        // 빈 폼 위에 덮어써야 나머지 칸이 undefined가 되지 않는다
+        ...EMPTY_FORM,
+        date: new Date().toISOString().slice(0, 10),
         ...rest,
         categories: initial.categories ?? [],
         places: initial.places ?? [],
@@ -68,11 +72,18 @@ export default function ContentFormModal({
     }
   }, [initial])
 
-  // ESC로 닫기
+  // ESC로 닫기 + 뒤 배경 스크롤 잠금
+  // 잠그지 않으면 폰에서 폼 위를 쓸어내릴 때 뒤 페이지가 같이 밀리고,
+  // 그 바람에 사파리 주소창·툴바가 튀어나와 창이 잘려 보인다.
   useEffect(() => {
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     const onKeyDown = (e) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previous
+      window.removeEventListener('keydown', onKeyDown)
+    }
   }, [onClose])
 
   const set = (key) => (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))
@@ -164,21 +175,27 @@ export default function ContentFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]"
       onClick={onClose}
     >
+      {/*
+        제목과 버튼 줄은 고정하고 가운데만 스크롤한다.
+        폼이 길어서 통째로 스크롤하면 폰에서 '저장하기'까지 한참 내려야 했고,
+        높이도 dvh로 잡아야 사파리 주소창/툴바 뒤로 잘리지 않는다 (index.css 참고).
+      */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label={isEdit ? '컨텐츠 수정' : '새 컨텐츠 추가'}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+        className="cb-modal-tall flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-lg font-bold text-neutral-900">
+        <h2 className="shrink-0 px-6 pb-3 pt-5 text-lg font-bold text-neutral-900">
           {isEdit ? '✏️ 컨텐츠 수정' : '💡 새 컨텐츠 추가'}
         </h2>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-6 pb-4">
           {/* 링크 분석이 왜 안 됐는지 화면에 그대로 남긴다 (로그를 열지 않아도 알 수 있게) */}
           {analysisNote && (
             <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
@@ -392,7 +409,10 @@ export default function ContentFormModal({
             />
           </div>
 
-          <div className="mt-2 flex justify-end gap-2">
+          </div>
+
+          {/* 항상 보이는 버튼 줄 — 폼이 아무리 길어도 여기서 바로 저장할 수 있다 */}
+          <div className="flex shrink-0 justify-end gap-2 border-t border-neutral-900/5 bg-white px-6 py-3">
             <button
               type="button"
               onClick={onClose}

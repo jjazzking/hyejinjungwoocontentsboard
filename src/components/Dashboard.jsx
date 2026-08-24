@@ -1,15 +1,20 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import ContentCard from './ContentCard.jsx'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import ContentSummary from './ContentSummary.jsx'
+import ContentSheet from './ContentSheet.jsx'
+import CategoryPicker from './CategoryPicker.jsx'
 import ContentFormModal from './ContentFormModal.jsx'
 import ClipboardPrompt from './ClipboardPrompt.jsx'
+import ShareToast from './ShareToast.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
 import CompletedCalendar from './CompletedCalendar.jsx'
 import MapErrorBoundary from './MapErrorBoundary.jsx'
 // 지도 라이브러리(Leaflet)가 꽤 커서, 지도 보기를 켤 때만 내려받게 분리한다
 const ContentMap = lazy(() => import('./ContentMap.jsx'))
 import { useClipboardSuggestion } from '../hooks/useClipboardSuggestion.js'
+import { useSharedLink } from '../hooks/useSharedLink.js'
 import { useCategories } from '../hooks/useCategories.js'
-import { analyzeLink } from '../utils/linkAnalyzer.js'
+import { analyzeLink, normalizeSnsUrl } from '../utils/linkAnalyzer.js'
+import { buildCategoryColorMap, contentColor } from '../utils/categoryColors.js'
 
 const TABS = [
   { key: 'PLANNING', label: '할 것들', emoji: '🗓️' },
@@ -27,11 +32,12 @@ function formatDay(dateStr) {
  * 메인 대시보드.
  * - 상단 탭으로 PLANNING / COMPLETED 전환
  * - '할 것들'은 태그 칩으로, '한 것들'은 달력의 날짜로 걸러서 볼 수 있다
- * - 매소너리(컬럼) 레이아웃: 임베드 카드는 크게, 매뉴얼 카드는 컴팩트하게
- *   섞여 쌓이면서 컬럼 폭은 일정하게 유지된다
- * - 편집 모드 토글: 카드마다 ☰(위치 이동)/상태 전환/수정/삭제 버튼 + 새 컨텐츠 추가 버튼 노출
+ * - 목록은 **축약 카드**로 깔고, 누르면 풀 카드 시트가 뜬다.
+ *   전부 풀 카드로 깔면 임베드·사진 때문에 한 화면에 두세 장밖에 안 들어온다
+ * - 카드 액션(✏️ 수정 + ⋯)은 항상 떠 있다 — '편집' 토글을 먼저 켜는 단계를 없앴다
  * - 위치 이동: ☰을 누르면 이동 모드 — 다른 카드를 누르면 그 앞으로, 맨 뒤 슬롯을 누르면 맨 뒤로
  * - 클립보드에서 SNS 링크를 발견하면 하단 배너로 카드 생성을 제안
+ * - 다른 앱에서 '공유'로 들어오면(`?url=…`) 묻지 않고 바로 카드로 저장하고 결과만 알린다
  */
 export default function Dashboard({
   contents,
@@ -44,7 +50,6 @@ export default function Dashboard({
   onMove,
 }) {
   const [activeTab, setActiveTab] = useState('PLANNING')
-  const [editMode, setEditMode] = useState(false)
   // modal: null(닫힘) | { mode: 'add', draft? } | { mode: 'edit', content }
   const [modal, setModal] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -53,18 +58,32 @@ export default function Dashboard({
   // 탭별 보기 필터: 할 것들은 태그, 한 것들은 날짜('YYYY-MM-DD')
   const [categoryFilter, setCategoryFilter] = useState(null)
   const [dateFilter, setDateFilter] = useState(null)
+  // 풀 카드 시트: null | { id, place?, color? } — 내용은 contents에서 매번 찾는다
+  // (스냅샷을 들고 있으면 수정 직후 옛 내용이 남는다)
+  const [detail, setDetail] = useState(null)
+  // 기존 카드를 이 태그에 넣는 창: null | 태그 이름
+  const [picker, setPicker] = useState(null)
 
-  const { suggestion, resolveSuggestion } = useClipboardSuggestion(contents)
+  const { suggestion, resolveSuggestion, checkClipboard, notice } = useClipboardSuggestion(contents)
   const { categories, addCategory } = useCategories(contents)
+  // 축약 카드·지도 핀이 같은 태그 색을 쓰도록 한곳에서 만든다
+  const colorMap = useMemo(() => buildCategoryColorMap(categories), [categories])
+  // 다른 앱에서 공유로 넘어온 링크 (처음 뜰 때 한 번만 잡힌다)
+  const sharedUrl = useSharedLink()
+  // shareState: null | { status, title?, contentId? }
+  const [shareState, setShareState] = useState(sharedUrl ? { status: 'saving' } : null)
+  // 공유 처리는 비동기라 도중에 값이 바뀐다 — 항상 최신값을 읽도록 ref로 따라다닌다
+  const contentsRef = useRef(contents)
+  contentsRef.current = contents
+  const categoriesRef = useRef(categories)
+  categoriesRef.current = categories
 
   // 배열 순서가 곧 표시 순서 — 탭별로 걸러낸 뒤 필터를 적용한다
   const tabItems = useMemo(() => contents.filter((c) => c.status === activeTab), [contents, activeTab])
 
-  // 필터로 쓰던 태그가 사라지면(마지막 카드 삭제 등) 자동으로 전체 보기로 돌아간다
-  const activeCategory =
-    categoryFilter && tabItems.some((c) => (c.categories ?? []).includes(categoryFilter))
-      ? categoryFilter
-      : null
+  // 카드가 하나도 없는 태그도 골라둘 수 있어야 한다 — 방금 만든 태그에 첫 카드를
+  // 넣는 게 목적이라서. 목록에서 아예 사라진 태그만 전체 보기로 되돌린다.
+  const activeCategory = categoryFilter && categories.includes(categoryFilter) ? categoryFilter : null
 
   const filtered = useMemo(() => {
     if (activeTab === 'PLANNING') {
@@ -115,11 +134,74 @@ export default function Dashboard({
     setModal(null)
   }
 
+  /** 카드 추가 폼 열기. 태그를 넘기면 그 태그가 미리 붙은 채로 시작한다 */
+  const openAddForm = (category) =>
+    setModal({ mode: 'add', draft: category ? { categories: [category] } : null })
+
+  /**
+   * 태그에 카드 채우기.
+   * 태그를 골라둔 상태면 **기존 카드 중에서 고르는 창**을 먼저 연다 —
+   * 새 태그를 만드는 건 대개 이미 있는 카드들을 묶으려는 것이라서.
+   */
+  const openCardsForCategory = (category) =>
+    category ? setPicker(category) : openAddForm(null)
+
+  /** 고른 카드에 태그를 붙이거나 뗀다 */
+  const toggleCategoryOn = (content, category) => {
+    const current = content.categories ?? []
+    const next = current.includes(category)
+      ? current.filter((name) => name !== category)
+      : [...current, category]
+    onUpdate(content.id, { categories: next })
+  }
+
   const handleDelete = (content) => {
     if (window.confirm(`'${content.title}' 컨텐츠를 삭제할까요?`)) {
       onRemove(content.id)
     }
   }
+
+  // 공유로 들어온 링크는 확인을 묻지 않고 바로 카드로 만든다.
+  // 카드 목록을 다 받은 뒤에 시작해야 중복 검사가 맞고, Supabase 모드에서
+  // 정렬 순서(sort_order)도 제대로 붙는다.
+  useEffect(() => {
+    if (!sharedUrl || loading) return
+    let alive = true
+
+    const run = async () => {
+      const already = contentsRef.current.find(
+        (c) => c.reference_url && normalizeSnsUrl(c.reference_url) === sharedUrl,
+      )
+      if (already) {
+        setShareState({ status: 'duplicate', title: already.title, contentId: already.id })
+        return
+      }
+
+      let draft
+      try {
+        draft = await analyzeLink(sharedUrl, categoriesRef.current)
+      } catch (analyzeError) {
+        console.error('공유 링크 분석 실패:', analyzeError)
+      }
+      if (!alive) return
+
+      if (!draft) {
+        setShareState({ status: 'failed', title: sharedUrl })
+        return
+      }
+      const id = onAdd(draft)
+      // 새 카드는 '할 것'으로 들어가므로 그 탭을 보여줘야 방금 저장한 게 보인다
+      setActiveTab('PLANNING')
+      setShareState({ status: 'saved', title: draft.title, contentId: id })
+    }
+
+    run()
+    return () => {
+      alive = false
+    }
+    // sharedUrl은 처음 한 번만 정해지고, 나머지는 최신값을 ref로 읽는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedUrl, loading])
 
   // 클립보드 링크로 카드 초안 만들기: 게시물 분석 후 폼을 미리 채워서 연다
   const handleCreateFromClipboard = async () => {
@@ -134,27 +216,20 @@ export default function Dashboard({
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
       {/* 헤더 */}
-      <header className="relative mb-8 text-center">
+      <header className="mb-8 text-center">
         <h1 className="text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">
           혜진 <span className="text-rose-400">♥</span> 정우 컨텐츠 보드
         </h1>
         <p className="mt-2 text-sm text-neutral-500">우리 둘의 하고 싶은 것, 해낸 것들을 한곳에</p>
 
-        {/* 편집 모드 토글 */}
+        {/* 복사해 둔 SNS 링크 확인 — 브라우저 붙여넣기 팝업은 이 버튼을 눌렀을 때만 뜬다 */}
         <button
           type="button"
-          onClick={() => {
-            setEditMode((prev) => !prev)
-            setMovingId(null)
-          }}
-          aria-pressed={editMode}
-          className={`absolute right-0 top-0 rounded-full px-3.5 py-1.5 text-xs font-medium shadow-sm ring-1 transition-colors ${
-            editMode
-              ? 'bg-rose-400 text-white ring-rose-400 hover:bg-rose-500'
-              : 'bg-white text-neutral-600 ring-neutral-900/10 hover:bg-neutral-50'
-          }`}
+          onClick={checkClipboard}
+          title="복사해 둔 인스타/유튜브/틱톡 링크로 카드 만들기"
+          className="mt-3 rounded-full bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
         >
-          {editMode ? '✔️ 편집 완료' : '✏️ 편집'}
+          📋 복사한 링크로 카드 만들기
         </button>
       </header>
 
@@ -201,7 +276,13 @@ export default function Dashboard({
       {/* 탭별 보기 필터: 할 것들 = 태그 칩, 한 것들 = 달력 */}
       {!loading &&
         (activeTab === 'PLANNING' ? (
-          <CategoryFilter items={tabItems} value={activeCategory} onChange={setCategoryFilter} />
+          <CategoryFilter
+            items={tabItems}
+            categories={categories}
+            value={activeCategory}
+            onChange={setCategoryFilter}
+            onAddCategory={addCategory}
+          />
         ) : (
           <CompletedCalendar items={tabItems} selectedDate={dateFilter} onSelect={setDateFilter} />
         ))}
@@ -227,7 +308,8 @@ export default function Dashboard({
           >
             <ContentMap
               items={filtered}
-              editable={editMode}
+              categories={categories}
+              onOpen={(pin) => setDetail({ id: pin.content.id, place: pin.place, color: pin.color })}
               onEdit={(content) => setModal({ mode: 'edit', content })}
             />
           </Suspense>
@@ -257,35 +339,48 @@ export default function Dashboard({
               ? `'${activeCategory}' 태그가 붙은 카드가 없어요.`
               : `${formatDay(dateFilter)}에 기록한 카드가 없어요.`}
           </p>
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
-          >
-            전체 보기
-          </button>
-        </div>
-      ) : filtered.length > 0 || editMode ? (
-        <main className="columns-1 gap-6 sm:columns-2 lg:columns-3">
-          {/* 편집 모드일 때 맨 앞에 추가 카드 (컴팩트 사이즈) */}
-          {editMode && (
+          {/* 태그를 갓 만든 직후가 바로 이 화면이다 — 여기서 첫 카드를 넣을 수 있어야 한다 */}
+          <div className="flex flex-wrap justify-center gap-2">
+            {activeTab === 'PLANNING' && activeCategory && (
+              <button
+                type="button"
+                onClick={() => openCardsForCategory(activeCategory)}
+                className="rounded-full bg-rose-400 px-4 py-1.5 text-xs font-medium text-white shadow transition-colors hover:bg-rose-500"
+              >
+                ＋ &apos;{activeCategory}&apos;에 카드 넣기
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setModal({ mode: 'add' })}
-              className="mb-6 flex min-h-36 w-full break-inside-avoid flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-rose-200 bg-white/60 text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50"
+              onClick={resetFilters}
+              className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
             >
-              <span className="text-3xl">＋</span>
-              <span className="text-sm font-medium">새 컨텐츠 추가</span>
+              전체 보기
             </button>
-          )}
+          </div>
+        </div>
+      ) : (
+        <main className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/* 추가 타일은 항상 맨 앞에. 태그를 골라둔 상태면 그 태그로 채우기가 된다 */}
+          <button
+            type="button"
+            onClick={() => openCardsForCategory(activeCategory)}
+            className="flex min-h-20 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-rose-200 bg-white/60 text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50"
+          >
+            <span className="text-xl">＋</span>
+            <span className="text-xs font-medium">
+              {activeCategory ? `'${activeCategory}'에 카드 넣기` : '새 컨텐츠 추가'}
+            </span>
+          </button>
 
           {filtered.map((content) => (
-            <ContentCard
+            <ContentSummary
               key={content.id}
               content={content}
-              editable={editMode}
+              color={contentColor(content, colorMap)}
               moving={movingId === content.id}
               isMoveTarget={Boolean(movingId) && movingId !== content.id}
+              onOpen={() => setDetail({ id: content.id })}
               onMoveStart={() => setMovingId((prev) => (prev === content.id ? null : content.id))}
               onMoveHere={() => handleMoveHere(content.id)}
               onEdit={() => setModal({ mode: 'edit', content })}
@@ -299,36 +394,58 @@ export default function Dashboard({
             <button
               type="button"
               onClick={() => handleMoveHere(null)}
-              className="mb-6 flex min-h-24 w-full break-inside-avoid items-center justify-center rounded-2xl border-2 border-dashed border-rose-300 bg-rose-50/40 text-sm font-medium text-rose-500 transition-colors hover:bg-rose-100/60"
+              className="flex min-h-20 w-full items-center justify-center rounded-2xl border-2 border-dashed border-rose-300 bg-rose-50/40 text-xs font-medium text-rose-500 transition-colors hover:bg-rose-100/60"
             >
               ⤵️ 맨 뒤로 이동
             </button>
           )}
         </main>
-      ) : (
-        <div className="flex flex-col items-center gap-3 py-20 text-center">
-          <span className="text-5xl">🌱</span>
-          <p className="text-neutral-500">
-            {activeTab === 'PLANNING'
-              ? '아직 계획한 컨텐츠가 없어요. 릴스 보다가 꽂힌 거 바로 추가해 보세요!'
-              : '완료한 컨텐츠가 없어요. 첫 번째 추억을 만들러 가볼까요?'}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setEditMode(true)
-              setModal({ mode: 'add' })
-            }}
-            className="mt-2 rounded-full bg-rose-400 px-5 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-rose-500"
-          >
-            ＋ 컨텐츠 추가하기
-          </button>
-        </div>
       )}
 
       {/* 클립보드 링크 감지 배너 */}
+      {/* 축약 카드를 누르면 뜨는 풀 카드. 내용은 항상 최신 contents에서 찾는다 */}
+      <ContentSheet
+        content={detail ? contents.find((c) => c.id === detail.id) ?? null : null}
+        place={detail?.place}
+        color={detail?.color}
+        onEdit={(content) => {
+          setDetail(null)
+          setModal({ mode: 'edit', content })
+        }}
+        onClose={() => setDetail(null)}
+      />
+
+      {picker && (
+        <CategoryPicker
+          category={picker}
+          contents={contents}
+          onToggle={(content) => toggleCategoryOn(content, picker)}
+          onCreateNew={() => {
+            const category = picker
+            setPicker(null)
+            openAddForm(category)
+          }}
+          onClose={() => setPicker(null)}
+        />
+      )}
+
+      <ShareToast
+        state={shareState}
+        onEdit={
+          shareState?.contentId
+            ? () => {
+                const content = contents.find((c) => c.id === shareState.contentId)
+                if (content) setModal({ mode: 'edit', content })
+                setShareState(null)
+              }
+            : undefined
+        }
+        onDismiss={() => setShareState(null)}
+      />
+
       <ClipboardPrompt
         suggestion={suggestion}
+        notice={notice}
         analyzing={analyzing}
         onCreate={handleCreateFromClipboard}
         onDismiss={resolveSuggestion}

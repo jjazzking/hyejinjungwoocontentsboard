@@ -17,13 +17,43 @@ export function detectPlatform(url) {
   return 'NONE'
 }
 
+/**
+ * 같은 게시물인데 주소가 달라 보이는 경우를 없앤다.
+ *
+ * 공유·복사로 들어오는 링크에는 `?igsh=…`, `?utm_source=…` 같은 추적 값이 붙어 온다.
+ * 그대로 두면 같은 릴스를 두 번 공유했을 때 카드가 두 개 생긴다.
+ * 유튜브의 `v`처럼 **없으면 어떤 영상인지 알 수 없는 값만** 남기고 전부 버린다.
+ */
+export function normalizeSnsUrl(url) {
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch {
+    return url
+  }
+  parsed.hash = ''
+  // instagram.com / www.instagram.com / m.instagram.com 이 다 같은 곳으로 모이게 한다
+  const bare = parsed.hostname.toLowerCase().replace(/^(www|m)\./, '')
+  parsed.hostname = /^(instagram|youtube|tiktok)\.com$/.test(bare) ? `www.${bare}` : bare
+
+  const keep = new URLSearchParams()
+  if (/youtube\.com$/i.test(parsed.hostname.replace(/^www\./i, '')) && parsed.searchParams.has('v')) {
+    keep.set('v', parsed.searchParams.get('v'))
+  }
+  parsed.search = keep.toString()
+
+  // 끝의 슬래시 유무만 다른 주소도 같은 것으로 본다 (경로가 비어 있을 때는 남긴다)
+  if (parsed.pathname.length > 1) parsed.pathname = parsed.pathname.replace(/\/+$/, '')
+  return parsed.toString()
+}
+
 /** 텍스트에서 지원 플랫폼의 첫 번째 URL을 찾아 반환한다 (없으면 null). */
 export function extractSnsUrl(text) {
   if (typeof text !== 'string') return null
   const match = text.match(/https?:\/\/[^\s"'<>]+/i)
   if (!match) return null
   const url = match[0].replace(/[.,)\]]+$/, '')
-  return detectPlatform(url) === 'NONE' ? null : url
+  return detectPlatform(url) === 'NONE' ? null : normalizeSnsUrl(url)
 }
 
 // 제목/작성자 텍스트에서 카테고리를 추측하는 키워드 규칙 (복수 매칭 허용)

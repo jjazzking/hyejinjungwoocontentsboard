@@ -450,31 +450,37 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   "title": "카드 제목",
   "categories": ["..."],
   "memo": "간단한 메모",
-  "place_query": "지도에서 찾을 검색어",
-  "place_name": "가게/장소 이름만 (지역명 없이)",
-  "place_address": "캡션에 적힌 실제 도로명/지번주소"
+  "places": [
+    {
+      "query": "지도에서 찾을 검색어",
+      "name": "가게/장소 이름만 (지역명 없이)",
+      "address": "캡션에 적힌 실제 도로명/지번주소"
+    }
+  ]
 }
 
 규칙:
 - title: 한국어로 20자 이내. 장소나 가게 이름이 있으면 꼭 포함하고, 뭘 하는 컨텐츠인지 한눈에 보이게.
 - categories: 사용자가 준 카테고리 목록 중에서만 고르세요 (복수 가능, 맞는 게 없으면 빈 배열).
 - memo: 한두 문장. 위치·메뉴·팁 등 나중에 다시 볼 때 유용한 핵심 정보만. 캡션에 정보가 없으면 빈 문자열.
-- place_query: 실제로 갈 수 있는 장소가 나오면 지도 검색에 쓸 "지역명 + 가게/장소 이름"을 쓰세요
-  (예: "속초 중앙시장 만석닭강정"). 가게 이름을 모르면 지역과 종류만이라도 쓰고,
-  특정 장소가 없는 컨텐츠(집에서 하는 요리, 온라인 등)면 빈 문자열로 두세요.
-  추측으로 지어내지 마세요 — 캡션이나 이미지에 근거가 있을 때만 씁니다.
+- places: 실제로 갈 수 있는 장소가 나오면 배열에 담으세요. 대부분은 한 곳이지만,
+  맛집 투어·데이트 코스처럼 **한 게시물에 여러 장소가 나오면 언급된 곳을 전부 원소로 나눠 담으세요**
+  (예: 카페 한 곳 + 식당 한 곳이면 배열 길이 2). 특정 장소가 없는 컨텐츠(집에서 하는 요리, 온라인 등)면
+  빈 배열로 두세요. 추측으로 지어내지 마세요 — 캡션이나 이미지에 근거가 있을 때만 씁니다.
   ★ 캡션 본문에 적힌 가게 이름을 가장 우선하세요. "게시물 위치 태그"는 동네·건물처럼
   대충 찍힌 경우가 많으니, 캡션에 가게 이름이 있으면 태그 대신 그걸 쓰고
   태그는 지역명을 보태는 정도로만 참고하세요.
   ★ 한국 맛집 계정은 가게 이름을 캡션 맨 끝에 "📍/🚩 가게이름 (지역)" 형태로 적거나
   해시태그(#청량리맛집 #페스카데리아)로만 남기는 경우가 아주 많습니다.
   이 두 곳을 반드시 확인해서 지역명과 가게 이름을 조합하세요.
-- place_name: place_query에서 지역명을 뺀 가게/장소 이름만 쓰세요 (예: "만석닭강정").
-  지역명을 붙인 검색이 실패했을 때 이 이름만으로 다시 찾아보는 데 씁니다.
-  가게 이름을 모르면 빈 문자열로 두세요.
-- place_address: 캡션에 도로명주소나 지번주소가 문자 그대로 적혀 있으면 그대로 옮겨 적으세요
-  (예: "서울 마포구 와우산로 12"). 캡션에 주소가 없으면 빈 문자열로 두세요.
-  절대 지어내지 마세요 — 상호명으로 장소를 못 찾았을 때 주소로 좌표를 찾는 데만 씁니다.
+  - query: 지도 검색에 쓸 "지역명 + 가게/장소 이름" (예: "속초 중앙시장 만석닭강정").
+    가게 이름을 모르면 지역과 종류만이라도 쓰세요.
+  - name: query에서 지역명을 뺀 가게/장소 이름만 쓰세요 (예: "만석닭강정").
+    지역명을 붙인 검색이 실패했을 때 이 이름만으로 다시 찾아보는 데 씁니다.
+    가게 이름을 모르면 빈 문자열로 두세요.
+  - address: 캡션에 도로명주소나 지번주소가 문자 그대로 적혀 있으면 그대로 옮겨 적으세요
+    (예: "서울 마포구 와우산로 12"). 캡션에 주소가 없으면 빈 문자열로 두세요.
+    절대 지어내지 마세요 — 상호명으로 장소를 못 찾았을 때 주소로 좌표를 찾는 데만 씁니다.
 - 광고 문구는 memo에 옮기지 마세요. 다만 해시태그는 지역명·가게 이름을 알아내는 근거로는
   적극적으로 활용하세요 (memo·title의 말투에만 섞지 않으면 됩니다).`
 
@@ -583,41 +589,68 @@ Deno.serve(async (req) => {
     })
   }
 
-  // 장소 찾기: AI가 캡션에서 뽑은 검색어를 먼저 쓴다.
+  // 장소 찾기: AI가 캡션에서 뽑은 검색어들을 하나씩 찾는다. 맛집 투어·데이트 코스처럼
+  // 한 게시물에 장소가 여러 곳 나오면 draft.places 배열에 원소가 여러 개 오므로
+  // 전부 검색해서 담는다 (카드 하나에 장소 여러 개 = 지도에 핀 여러 개).
   // 게시물의 위치 태그는 실제 가게가 아니라 동네·건물처럼 대충 찍힌 경우가 많아서
-  // 캡션 쪽이 안 나올 때의 폴백으로만 쓴다. 실패해도 초안은 그대로 돌려준다.
+  // AI가 캡션에서 하나도 못 찾았을 때의 폴백으로만 쓴다. 실패해도 초안은 그대로 돌려준다.
   const tagged = meta.locationName?.trim() ?? ''
-  const guessed = typeof draft.place_query === 'string' ? draft.place_query.trim() : ''
-  const nameOnly = typeof draft.place_name === 'string' ? draft.place_name.trim() : ''
-  const addressGuess = typeof draft.place_address === 'string' ? draft.place_address.trim() : ''
+  const MAX_PLACES = 6 // 오탐·과도한 검색 호출을 막는 상한
+  const placeGuesses: Array<{ query: string; name: string; address: string }> = Array.isArray(
+    draft.places,
+  )
+    ? draft.places
+        .map((entry: unknown) => {
+          const p = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
+          return {
+            query: typeof p.query === 'string' ? p.query.trim() : '',
+            name: typeof p.name === 'string' ? p.name.trim() : '',
+            address: typeof p.address === 'string' ? p.address.trim() : '',
+          }
+        })
+        .filter((p) => p.query || p.name || p.address)
+        .slice(0, MAX_PLACES)
+    : []
 
-  const attempts: Array<{ query: string; source: Place['source'] }> = []
-  if (guessed) attempts.push({ query: guessed, source: 'AI' })
-  // 위치 태그가 캡션 검색어와 사실상 같으면 같은 검색을 두 번 하지 않는다
-  if (tagged && tagged !== guessed) attempts.push({ query: tagged, source: 'INSTAGRAM' })
-  // 갓 오픈한 가게는 "지역명 + 상호명"으로는 색인에 안 잡히는 일이 많다.
-  // 마지막으로 상호명만 넣어 한 번 더 찾아본다 (동명 업소가 걸릴 수 있어 순서는 맨 뒤).
-  if (nameOnly && nameOnly !== guessed && nameOnly !== tagged)
-    attempts.push({ query: nameOnly, source: 'AI' })
-
-  let found: { place: Place | null; debug: string } = {
-    place: null,
-    debug: 'AI가 캡션에서 장소를 찾지 못했어요 (place_query 비어 있음)',
-  }
+  const foundPlaces: Place[] = []
+  const seenNames = new Set<string>()
   const reasons: string[] = []
-  for (const attempt of attempts) {
-    found = await findPlace(attempt.query, attempt.source)
-    if (found.place) break
-    reasons.push(found.debug)
+
+  for (const guess of placeGuesses) {
+    let found: { place: Place | null; debug: string } = { place: null, debug: '' }
+    if (guess.query) found = await findPlace(guess.query, 'AI')
+    // 갓 오픈한 가게는 "지역명 + 상호명" 조합으로는 색인에 안 잡히는 일이 많다.
+    // 상호명만으로 한 번 더 찾아본다 (동명 업소가 걸릴 수 있어 지역명 검색 다음 순서).
+    if (!found.place && guess.name && guess.name !== guess.query) {
+      const byName = await findPlace(guess.name, 'AI')
+      if (byName.place) found = byName
+      else reasons.push(byName.debug)
+    }
+    // 상호명으로 실패했는데 캡션에 실제 주소가 있으면 지오코딩으로 좌표만이라도 찾는다
+    // — 등록 안 된 소규모 가게에서 특히 유용하다.
+    if (!found.place && guess.address)
+      found = await geocodeAddress(guess.address, guess.name || guess.query)
+    if (found.place) {
+      if (!seenNames.has(found.place.name)) {
+        seenNames.add(found.place.name)
+        foundPlaces.push(found.place)
+      }
+    } else if (found.debug) {
+      reasons.push(found.debug)
+    }
   }
-  // 상호명(캡션 검색어·위치태그)으로 다 실패했는데 캡션에 실제 주소가 있으면
-  // 지오코딩으로 좌표만이라도 찾는다 — 등록 안 된 소규모 가게에서 특히 유용하다.
-  if (!found.place && addressGuess) {
-    const geocoded = await geocodeAddress(addressGuess, guessed || tagged)
-    if (geocoded.place) found = geocoded
-    else reasons.push(geocoded.debug)
+
+  // AI가 캡션에서 장소를 하나도 못 찾았을 때만 위치 태그로 폴백한다
+  // (태그는 부정확한 경우가 많아 캡션 쪽 결과가 있으면 우선하지 않는다)
+  if (foundPlaces.length === 0 && tagged) {
+    const found = await findPlace(tagged, 'INSTAGRAM')
+    if (found.place) foundPlaces.push(found.place)
+    else reasons.push(found.debug)
   }
-  if (!found.place && reasons.length > 0) found = { place: null, debug: reasons.join(' / ') }
+
+  if (foundPlaces.length === 0 && reasons.length === 0) {
+    reasons.push('AI가 캡션에서 장소를 찾지 못했어요 (places 비어 있음)')
+  }
 
   return json(200, {
     detail: captionDetail,
@@ -626,7 +659,7 @@ Deno.serve(async (req) => {
       ? draft.categories.filter((c: unknown) => typeof c === 'string' && categories.includes(c))
       : [],
     memo: typeof draft.memo === 'string' ? draft.memo.trim() : '',
-    places: found.place ? [found.place] : [],
-    place_debug: found.debug,
+    places: foundPlaces,
+    place_debug: reasons.join(' / '),
   })
 })
