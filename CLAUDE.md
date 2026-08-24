@@ -20,13 +20,14 @@ Edge Function을 고쳤으면 `deno check supabase/functions/<이름>/index.ts`�
 src/
   App.jsx                     최상위, Dashboard 렌더
   components/
-    Dashboard.jsx             탭(PLANNING/COMPLETED) · 필터 · 카드 그리드 · 모달 제어
+    Dashboard.jsx             탭(PLANNING/COMPLETED/CATEGORIES) · 필터 · 카드 그리드 · 모달 제어
     ContentCard.jsx           풀 카드 1장 (사진/임베드/장소/카테고리) — 시트 안에서만 쓴다
     ContentSummary.jsx        축약 카드 — 목록에 깔리는 한 줄 요약 + 상시 노출 액션
     ContentSheet.jsx          축약 카드를 누르면 뜨는 풀 카드 시트 (목록·지도 공용)
     CategoryPicker.jsx        '이 태그에 넣을 카드 고르기' 창 (기존 카드 토글)
     ContentFormModal.jsx      카드 추가·수정 폼 (AI 자동 채움 진입점)
-    CategoryFilter.jsx        '할 일' 탭의 태그 칩 — 필터 + 태그 만들기(＋ 태그)
+    CategoryFilter.jsx        '할 일' 탭의 태그 칩 — 거르기 전용 (칩에 태그 색 점)
+    CategoryManager.jsx       '태그 관리' 탭 — 태그 만들기 · 태그별 색 고르기 · 안 쓰는 태그 지우기
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
     ContentMap.jsx            지도 (lazy 로드) — 핀 계산·범례·시트·위치 없는 카드 안내
     map/NaverCanvas.jsx       네이버 지도 v3로 핀·경계선 그리기
@@ -42,13 +43,13 @@ src/
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
   hooks/
     useContents.js            카드 CRUD (Supabase ↔ localStorage 이중 모드)
-    useCategories.js          커스텀 카테고리
+    useCategories.js          커스텀 카테고리 + 태그별 색
     useClipboardSuggestion.js 클립보드 감시
     useSharedLink.js          공유(`?url=`/`?text=`)로 들어온 링크 1회 수신
   utils/
     linkAnalyzer.js           링크 → 카드 초안 (Edge Function 호출, oEmbed 폴백)
     placeSearch.js            장소 검색 Edge Function 호출
-    categoryColors.js         태그 → 지도 핀 색 (팔레트 · 카드 대표색)
+    categoryColors.js         태그 → 색 (직접 고른 색 우선 · 나머지는 팔레트 자동 배정)
     uploadPhoto.js            Supabase Storage 업로드
   data/
     districtBoundaries.json   시·군·구 경계선 (생성물 — 직접 고치지 말 것)
@@ -93,6 +94,11 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 `failed` / `detail` / `place_debug` 같은 한국어 사유를 담아 폼에 그대로 보여준다.
 사용자가 로그를 열지 않고도 원인을 알 수 있어야 한다.
 
+**태그 관리는 '태그 관리' 탭에 모은다.** 태그 만들기·색 고르기·지우기는 전부 여기다.
+태그 칩 줄(`CategoryFilter`)은 거르는 일만 한다 — 칩 사이에 입력칸·설정이 끼면 줄이 흔들린다.
+**태그 색은 한곳(`buildCategoryColorMap`)에서 만들어 내려보낸다.** 직접 고른 색이 자동 색을
+이기고, 자동 색은 이미 골라 간 색을 피한다. 화면마다 따로 만들면 필터를 걸 때 색이 바뀐다.
+
 **축약 → 풀 카드 두 단계다.** 목록과 지도는 축약 카드(`ContentSummary` / `PinMiniCard`)로
 훑고, 누르면 `ContentSheet`가 풀 카드를 띄운다. 목록을 전부 풀 카드로 깔면 임베드·사진
 때문에 한 화면에 두세 장밖에 안 들어와서 훑을 수가 없다. **풀 카드(`ContentCard`)는
@@ -107,6 +113,9 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 장소는 지어내지 말라는 규칙을 시스템 프롬프트에 유지한다.
 
 ## 데이터 모델
+
+`custom_categories` 행: `name`(PK), `color`(직접 고른 `#RRGGBB` · null이면 자동 색).
+색만 고른 기본 태그(맛집 등)도 이 테이블에 행이 생긴다.
 
 `contents` 행의 주요 필드: `title`, `status`(`PLANNING`|`COMPLETED`), `date`,
 `categories`(text[]), `memo`, `photo_urls`(text[]), `reference_url`,

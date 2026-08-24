@@ -48,11 +48,18 @@ create trigger contents_set_updated_at
 
 -- ─────────────────────────────────────────────
 -- 2. 커스텀 카테고리 (기본 4개 외에 직접 추가한 것)
+--    color 는 '태그 관리' 탭에서 직접 고른 색(#RRGGBB). null 이면 자동 색.
+--    색만 고른 기본 태그(맛집 등)도 여기에 행으로 남는다.
 -- ─────────────────────────────────────────────
 create table if not exists public.custom_categories (
   name       text primary key,
+  color      text,
   created_at timestamptz not null default now()
 );
+
+-- 이미 테이블을 만들어 둔 경우를 위한 추가 컬럼
+alter table public.custom_categories
+  add column if not exists color text;
 
 -- ─────────────────────────────────────────────
 -- 3. RLS (행 수준 보안)
