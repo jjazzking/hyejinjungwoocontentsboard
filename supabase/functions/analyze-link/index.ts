@@ -385,9 +385,24 @@ const JUNK_CAPTION = [
 const STATS_PREFIX = /^\s*(\d[\d,.]*\s*[KkMm]?\s*(likes?|comments?)|좋아요\s*\d|댓글\s*\d)/i
 const HAS_QUOTED_CAPTION = /:\s*["“'']/
 
+/**
+ * Apify 경로는 캡션 본문이 비어 있어도 계정명·위치 태그를 붙여서 넘긴다.
+ * 그 줄만 남았다면 AI가 볼 내용이 사실상 없는 것("계정: @songchu_valley" 19자가
+ * 길이 검사를 통과해 버렸다). 본문만 떼어내서 판단한다.
+ */
+const META_ONLY_LINE = /^(계정:\s*@|작성자:|게시물 위치 태그)/
+
+function captionBody(caption: string) {
+  return caption
+    .split('\n')
+    .filter((line) => !META_ONLY_LINE.test(line.trim()))
+    .join('\n')
+    .trim()
+}
+
 function isUsefulCaption(caption: string | undefined) {
   if (!caption) return false
-  const trimmed = caption.trim()
+  const trimmed = captionBody(caption)
   if (trimmed.length < 15) return false
   if (JUNK_CAPTION.some((pattern) => pattern.test(trimmed))) return false
   if (STATS_PREFIX.test(trimmed) && !HAS_QUOTED_CAPTION.test(trimmed)) return false
@@ -434,13 +449,100 @@ async function fetchPostMeta(url: string, platform: string): Promise<PostMeta | 
   return null
 }
 
-/** Claude 응답에서 JSON 본문만 뽑아 파싱한다 (```json 펜스 허용). */
-function parseDraftJson(text: string) {
-  const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
-  const start = stripped.indexOf('{')
-  const end = stripped.lastIndexOf('}')
-  if (start === -1 || end === -1) throw new Error('no JSON in response')
-  return JSON.parse(stripped.slice(start, end + 1))
+/**
+ * 응답이 max_tokens에 걸려 중간에 끊겼는지 본다.
+ * 괄호가 안 닫혔거나 문자열이 열린 채로 끝나면 잘린 것 — 형식 오류와 구분해서
+ * 화면에 다른 사유를 보여주려고 따로 판단한다.
+ */
+function looksTruncated(json: string) {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (const ch of json) {
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (inString && ch === '\\') {
+      escaped = true
+      continue
+    }
+    if (ch === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+    if (ch === '{' || ch === '[') depth += 1
+    else if (ch === '}' || ch === ']') depth -= 1
+  }
+  return inString || depth > 0
+}
+
+/**
+ * 카드 여러 장으로 답했을 때 한 장으로 합친다.
+ * 제목은 첫 카드 것을 쓰고, 장소·카테고리는 전부 모으고, 메모는 이어 붙인다
+ * (장소별 운영시간·가격이 메모에 들어 있어서 버리면 아깝다).
+ */
+function mergeDrafts(list: Record<string, unknown>[]) {
+  const places: unknown[] = []
+  const categories: string[] = []
+  const memos: string[] = []
+  for (const entry of list) {
+    if (Array.isArray(entry.places)) places.push(...entry.places)
+    if (Array.isArray(entry.categories))
+      categories.push(...entry.categories.filter((c): c is string => typeof c === 'string'))
+    if (typeof entry.memo === 'string' && entry.memo.trim()) memos.push(entry.memo.trim())
+  }
+  return {
+    ...(list[0] ?? {}),
+    places,
+    categories: [...new Set(categories)],
+    memo: memos.join(' / ').slice(0, 400),
+  }
+}
+
+type DraftParse =
+  | { ok: true; draft: Record<string, unknown> }
+  | { ok: false; truncated: boolean }
+
+/**
+ * Claude 응답에서 JSON 본문만 뽑아 파싱한다 (```json 펜스 허용).
+ * 게시물이 "이색 데이트 5곳 추천"처럼 목록형이면 카드 하나가 아니라 최상위 배열로
+ * 답하는 일이 있어서, 배열로 와도 받아 한 장으로 합친다.
+ */
+function parseDraftJson(text: string): DraftParse {
+  const stripped = text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/, '')
+    .trim()
+
+  const objStart = stripped.indexOf('{')
+  const arrStart = stripped.indexOf('[')
+  if (objStart === -1 && arrStart === -1) return { ok: false, truncated: false }
+  // 배열이 객체보다 먼저 나오면 최상위가 배열이다
+  const isArray = arrStart !== -1 && (objStart === -1 || arrStart < objStart)
+  const start = isArray ? arrStart : objStart
+  const body = stripped.slice(start)
+  if (looksTruncated(body)) return { ok: false, truncated: true }
+
+  const end = body.lastIndexOf(isArray ? ']' : '}')
+  if (end === -1) return { ok: false, truncated: true }
+
+  let value: unknown
+  try {
+    value = JSON.parse(body.slice(0, end + 1))
+  } catch {
+    return { ok: false, truncated: false }
+  }
+  if (Array.isArray(value)) {
+    const entries = value.filter(
+      (v): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v),
+    )
+    if (entries.length === 0) return { ok: false, truncated: false }
+    return { ok: true, draft: mergeDrafts(entries) }
+  }
+  if (value && typeof value === 'object') return { ok: true, draft: value as Record<string, unknown> }
+  return { ok: false, truncated: false }
 }
 
 const SYSTEM_PROMPT = `당신은 커플의 데이트·컨텐츠 아이디어 보드에 들어갈 카드를 만드는 도우미입니다.
@@ -459,8 +561,17 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   ]
 }
 
+★ 출력은 **언제나 객체 하나**입니다. 게시물이 "이색 데이트 5곳 추천"처럼 목록형이어도
+카드를 여러 장 만들지 말고, 카드 한 장의 places 배열에 그 장소들을 전부 담으세요.
+최상위에 배열([ ... ])을 쓰면 안 됩니다.
+
+★ 캡션이 없거나 정보가 부족해도 **위 JSON 형식으로만** 답하세요. 설명·사과·되묻기를
+쓰지 말고, 모르는 값은 빈 문자열("")이나 빈 배열([])로 두면 됩니다.
+
 규칙:
 - title: 한국어로 20자 이내. 장소나 가게 이름이 있으면 꼭 포함하고, 뭘 하는 컨텐츠인지 한눈에 보이게.
+  장소가 여러 곳이면 개별 가게 이름 대신 전체를 아우르는 제목을 쓰세요
+  (예: "서울·부산 이색 데이트 5곳").
 - categories: 사용자가 준 카테고리 목록 중에서만 고르세요 (복수 가능, 맞는 게 없으면 빈 배열).
 - memo: 한두 문장. 위치·메뉴·팁 등 나중에 다시 볼 때 유용한 핵심 정보만. 캡션에 정보가 없으면 빈 문자열.
 - places: 실제로 갈 수 있는 장소가 나오면 배열에 담으세요. 대부분은 한 곳이지만,
@@ -541,7 +652,8 @@ Deno.serve(async (req) => {
     try {
       const message = await client.messages.create({
         model: 'claude-haiku-4-5',
-        max_tokens: 500,
+        // 장소를 최대 6곳까지 담다 보면 500으로는 응답이 중간에 잘린다
+        max_tokens: 2000,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content }],
       })
@@ -574,12 +686,12 @@ Deno.serve(async (req) => {
     })
   }
 
-  let draft: Record<string, unknown>
-  try {
-    draft = parseDraftJson(responseText)
-  } catch {
+  const parsed = parseDraftJson(responseText)
+  if (!parsed.ok) {
     return json(200, {
-      failed: 'AI가 예상 못 한 형식으로 답했어요',
+      failed: parsed.truncated
+        ? 'AI 응답이 중간에 잘렸어요 (장소가 너무 많은 게시물일 수 있어요)'
+        : 'AI가 예상 못 한 형식으로 답했어요',
       detail: responseText.replace(/\s+/g, ' ').slice(0, 200),
       title: '',
       categories: [],
@@ -588,6 +700,7 @@ Deno.serve(async (req) => {
       place_debug: '',
     })
   }
+  const draft = parsed.draft
 
   // 장소 찾기: AI가 캡션에서 뽑은 검색어들을 하나씩 찾는다. 맛집 투어·데이트 코스처럼
   // 한 게시물에 장소가 여러 곳 나오면 draft.places 배열에 원소가 여러 개 오므로
