@@ -177,6 +177,7 @@ export async function analyzeLink(url, categoryOptions = []) {
       categories: ai.categories ?? [],
       places: ai.places ?? [],
       place_debug: ai.place_debug ?? '',
+      analyzed: true,
       // 캡션을 못 읽고 썸네일만 보고 만든 초안이면 서버가 그 사실을 알려준다
       analysis_note: ai.detail ?? '',
       memo: ai.memo ?? '',
@@ -197,8 +198,50 @@ export async function analyzeLink(url, categoryOptions = []) {
     photo_urls: [],
     categories: guessCategories(`${title} ${author ?? ''}`),
     places: [],
+    analyzed: false,
     // AI가 실패한 이유를 폼까지 들고 가서 그대로 보여준다 (빈 초안만 열리면 원인을 알 수 없다)
     analysis_note: [ai?.failed, ai?.detail].filter(Boolean).join(' — '),
     memo: author ? `${author} 게시물 보고 저장했어요 ✨` : '',
   }
+}
+
+/** analyzeLink가 실패했을 때 붙는 대체 제목들 — '아직 분석 안 됨' 판정에 쓴다 */
+const FALLBACK_TITLES = new Set(Object.values(FALLBACK_TITLE))
+
+/**
+ * 링크는 붙어 있는데 AI가 내용을 못 채운 카드인지 판단한다.
+ * 사용자가 직접 써 넣은 카드를 다시 건드리지 않도록 보수적으로 본다 —
+ * 제목이 대체 제목 그대로거나, 장소·메모가 둘 다 비어 있을 때만 대상으로 삼는다.
+ */
+export function needsReanalysis(content) {
+  const url = content?.reference_url?.trim()
+  if (!url || detectPlatform(url) === 'NONE') return false
+  if (FALLBACK_TITLES.has(content.title?.trim())) return true
+  const hasPlace = (content.places ?? []).length > 0
+  const hasMemo = Boolean(content.memo?.trim())
+  return !hasPlace && !hasMemo
+}
+
+/**
+ * 재분석 결과를 기존 카드에 얹을 패치를 만든다.
+ * **사용자가 손댄 값은 절대 덮어쓰지 않는다** — 제목은 대체 제목일 때만 바꾸고,
+ * 메모는 비어 있을 때만 채우며, 태그·장소는 기존 것에 더하기만 한다.
+ * 바뀔 게 없으면 빈 객체를 돌려준다.
+ */
+export function mergeReanalysis(content, draft) {
+  const patch = {}
+  if (draft.title && FALLBACK_TITLES.has(content.title?.trim()) && draft.title !== content.title) {
+    patch.title = draft.title
+  }
+  if (draft.memo && !content.memo?.trim()) patch.memo = draft.memo
+
+  const before = content.categories ?? []
+  const categories = [...new Set([...before, ...(draft.categories ?? [])])]
+  if (categories.length !== before.length) patch.categories = categories
+
+  const known = new Set((content.places ?? []).map((p) => p.name))
+  const added = (draft.places ?? []).filter((p) => p?.name && !known.has(p.name))
+  if (added.length > 0) patch.places = [...(content.places ?? []), ...added]
+
+  return patch
 }

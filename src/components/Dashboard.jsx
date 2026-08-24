@@ -4,6 +4,7 @@ import ContentSheet from './ContentSheet.jsx'
 import CategoryPicker from './CategoryPicker.jsx'
 import ContentFormModal from './ContentFormModal.jsx'
 import ClipboardPrompt from './ClipboardPrompt.jsx'
+import BulkAnalyzeButton from './BulkAnalyzeButton.jsx'
 import ShareToast from './ShareToast.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
 import CompletedCalendar from './CompletedCalendar.jsx'
@@ -231,6 +232,11 @@ export default function Dashboard({
         >
           📋 복사한 링크로 카드 만들기
         </button>
+
+        {/* 링크만 있고 내용이 안 채워진 카드들 일괄 재분석 (대상이 없으면 안 뜬다) */}
+        <div className="mx-auto max-w-md">
+          <BulkAnalyzeButton contents={contents} categories={categories} onUpdate={onUpdate} />
+        </div>
       </header>
 
       {/* 탭 */}
