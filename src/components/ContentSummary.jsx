@@ -198,7 +198,7 @@ export default function ContentSummary({
           )}
         </p>
 
-        <div className={`mt-1 flex flex-wrap items-center gap-1 ${placeCount > 1 ? 'pr-7' : ''}`}>
+        <div className={`mt-1 flex flex-wrap items-center gap-1 ${placeCount > 1 ? 'pr-8' : ''}`}>
           {(categories ?? []).slice(0, 3).map((category) => (
             <span
               key={category}
@@ -215,13 +215,13 @@ export default function ContentSummary({
       {placeCount > 1 && (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-0 right-0 h-7 w-7 select-none"
+          className="pointer-events-none absolute bottom-0 right-0 h-8 w-8 select-none"
         >
           <span
             className="absolute inset-0 bg-red-500"
             style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}
           />
-          <span className="absolute bottom-0.5 right-1 text-[10px] font-bold leading-none text-white">
+          <span className="absolute left-2/3 top-2/3 -translate-x-1/2 -translate-y-1/2 text-[10px] font-bold leading-none text-white">
             {placeCount}
           </span>
         </span>
