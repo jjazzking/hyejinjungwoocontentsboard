@@ -120,6 +120,7 @@ export default function ContentSummary({
   const thumbnail = isCompleted ? photo_urls?.[0] : null
   const mark = PLATFORM_MARK[reference_platform] ?? '💌'
   const place = (places ?? [])[0]
+  const placeCount = (places ?? []).length
 
   if (isMoveTarget) {
     return (
@@ -145,7 +146,7 @@ export default function ContentSummary({
         }
       }}
       aria-label={`${title} 자세히 보기`}
-      className={`relative flex cursor-pointer gap-3 rounded-2xl bg-white p-3 text-left shadow-sm ring-1 transition-shadow hover:shadow-md ${
+      className={`relative flex cursor-pointer gap-3 overflow-hidden rounded-2xl bg-white p-3 text-left shadow-sm ring-1 transition-shadow hover:shadow-md ${
         moving ? 'opacity-70 ring-2 ring-rose-400' : 'ring-neutral-900/5'
       }`}
     >
@@ -188,10 +189,16 @@ export default function ContentSummary({
 
         <p className="mt-1 truncate text-xs text-neutral-400">
           {formatDate(date)}
-          {place && <span className="text-neutral-500"> · 📍 {place.name}</span>}
+          {place && (
+            <span className="text-neutral-500">
+              {' · 📍 '}
+              {place.name}
+              {placeCount > 1 && ` 외 ${placeCount - 1}곳`}
+            </span>
+          )}
         </p>
 
-        <div className="mt-1 flex flex-wrap items-center gap-1">
+        <div className={`mt-1 flex flex-wrap items-center gap-1 ${placeCount > 1 ? 'pr-7' : ''}`}>
           {(categories ?? []).slice(0, 3).map((category) => (
             <span
               key={category}
@@ -203,6 +210,22 @@ export default function ContentSummary({
           {memo && <span className="truncate text-[11px] text-neutral-400">{memo}</span>}
         </div>
       </div>
+
+      {/* 장소가 여러 곳인 카드 표시 — 오른쪽 아래 모서리를 빨간 삼각형으로 채우고 개수를 적는다 */}
+      {placeCount > 1 && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 right-0 h-7 w-7 select-none"
+        >
+          <span
+            className="absolute inset-0 bg-red-500"
+            style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}
+          />
+          <span className="absolute bottom-0.5 right-1 text-[10px] font-bold leading-none text-white">
+            {placeCount}
+          </span>
+        </span>
+      )}
     </article>
   )
 }
