@@ -40,7 +40,7 @@ function saveRun(run) {
   }
 }
 
-export default function BulkAnalyzeButton({ contents, categories, onUpdate }) {
+export default function BulkAnalyzeButton({ contents, categories, onUpdate, onOpenCard }) {
   // 진행 상태: null(대기) | { done, total, current }
   const [progress, setProgress] = useState(null)
   // 끝난 뒤 요약: null | { filled, unchanged, failures, stopped }
@@ -112,7 +112,10 @@ export default function BulkAnalyzeButton({ contents, categories, onUpdate }) {
             state = {
               ...state,
               index: state.index + 1,
-              failures: [...state.failures, { title: content.title, reason: err?.message ?? '알 수 없는 오류' }],
+              failures: [
+                ...state.failures,
+                { id: content.id, title: content.title, reason: err?.message ?? '알 수 없는 오류' },
+              ],
             }
             saveRun(state)
             continue
@@ -125,7 +128,7 @@ export default function BulkAnalyzeButton({ contents, categories, onUpdate }) {
               index: state.index + 1,
               failures: [
                 ...state.failures,
-                { title: content.title, reason: draft?.analysis_note || '이유를 알 수 없어요' },
+                { id: content.id, title: content.title, reason: draft?.analysis_note || '이유를 알 수 없어요' },
               ],
             }
           } else {
@@ -264,7 +267,15 @@ export default function BulkAnalyzeButton({ contents, categories, onUpdate }) {
           <ul className="mt-2 flex flex-col gap-1 border-t border-neutral-100 pt-2">
             {result.failures.map((failure, i) => (
               <li key={i} className="text-[11px] leading-relaxed text-neutral-500">
-                <span className="font-medium text-neutral-700">{failure.title}</span> — {failure.reason}
+                {/* 이름을 누르면 그 카드를 그대로 펼친다 (수정 폼이 아니라 풀 카드) */}
+                <button
+                  type="button"
+                  onClick={() => onOpenCard?.(failure.id)}
+                  className="font-medium text-neutral-700 underline-offset-2 transition-colors hover:text-rose-500 hover:underline"
+                >
+                  {failure.title}
+                </button>{' '}
+                — {failure.reason}
               </li>
             ))}
           </ul>

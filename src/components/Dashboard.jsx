@@ -235,7 +235,12 @@ export default function Dashboard({
 
         {/* 링크만 있고 내용이 안 채워진 카드들 일괄 재분석 (대상이 없으면 안 뜬다) */}
         <div className="mx-auto max-w-md">
-          <BulkAnalyzeButton contents={contents} categories={categories} onUpdate={onUpdate} />
+          <BulkAnalyzeButton
+            contents={contents}
+            categories={categories}
+            onUpdate={onUpdate}
+            onOpenCard={(id) => setDetail({ id })}
+          />
         </div>
       </header>
 
@@ -316,6 +321,7 @@ export default function Dashboard({
               items={filtered}
               categories={categories}
               onOpen={(pin) => setDetail({ id: pin.content.id, place: pin.place, color: pin.color })}
+              onOpenCard={(id) => setDetail({ id })}
               onEdit={(content) => setModal({ mode: 'edit', content })}
             />
           </Suspense>

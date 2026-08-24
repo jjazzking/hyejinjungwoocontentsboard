@@ -41,7 +41,7 @@ function loadDistrictsPref() {
  * categories 는 **보드 전체**의 카테고리 목록 — 필터를 걸어도 태그 색이 안 바뀌게 하려면
  * 지금 보이는 카드가 아니라 전체 목록을 기준으로 색을 나눠야 한다.
  */
-export default function ContentMap({ items, categories = [], onOpen, onEdit }) {
+export default function ContentMap({ items, categories = [], onOpen, onOpenCard, onEdit }) {
   const [selectedKey, setSelectedKey] = useState(null)
   // 스크립트는 멀쩡했지만 실제로 그리다가 깨진 경우 (인증 실패한 반쪽짜리 지도 등)
   const [naverBroken, setNaverBroken] = useState(false)
@@ -133,7 +133,7 @@ export default function ContentMap({ items, categories = [], onOpen, onEdit }) {
             카드를 수정해서 📍 장소를 검색해 넣으면 여기에 핀으로 뜹니다.
           </p>
         </div>
-        <MissingList missing={missing} onEdit={onEdit} />
+        <MissingList missing={missing} onOpenCard={onOpenCard} onEdit={onEdit} />
       </div>
     )
   }
@@ -175,13 +175,13 @@ export default function ContentMap({ items, categories = [], onOpen, onEdit }) {
         </p>
       )}
 
-      <MissingList missing={missing} onEdit={onEdit} />
+      <MissingList missing={missing} onOpenCard={onOpenCard} onEdit={onEdit} />
     </div>
   )
 }
 
 /** 좌표가 없어 지도에 못 뜨는 카드 안내 */
-function MissingList({ missing, onEdit }) {
+function MissingList({ missing, onOpenCard, onEdit }) {
   if (missing.length === 0) return null
   return (
     <details className="mt-3 rounded-xl bg-white px-4 py-2.5 text-sm shadow-sm ring-1 ring-neutral-900/5">
@@ -191,7 +191,14 @@ function MissingList({ missing, onEdit }) {
       <ul className="mt-2 flex flex-col gap-1">
         {missing.map((content) => (
           <li key={content.id} className="flex items-center gap-2 text-xs text-neutral-500">
-            <span className="truncate">{content.title}</span>
+            {/* 이름을 누르면 그 카드를 그대로 펼친다 (수정 폼이 아니라 풀 카드) */}
+            <button
+              type="button"
+              onClick={() => onOpenCard?.(content.id)}
+              className="min-w-0 flex-1 truncate text-left underline-offset-2 transition-colors hover:text-neutral-800 hover:underline"
+            >
+              {content.title}
+            </button>
             <button
               type="button"
               onClick={() => onEdit?.(content)}
