@@ -366,3 +366,19 @@ instagram-webhook: ❌ 게시물 주소(instagram.com/reel/… 형태)는 없습
 - **아무 로그도 안 찍히면** → 9-5 스위치, 9-3 JWT, 9-4 `messages` 구독 순으로 확인
 
 > 확인이 끝나면 이 함수는 지워도 됩니다. 로그만 남기고 아무것도 저장하지 않습니다.
+
+## 10. 태그 색 저장 켜기 (선택)
+
+'🏷️ 태그 관리' 탭에서 태그마다 색을 고를 수 있는데, 그 색은
+`custom_categories.color` 컬럼에 저장됩니다. 컬럼이 없으면 색을 골라도
+새로고침하면 원래대로 돌아옵니다 (목록·태그 만들기는 그대로 동작합니다).
+
+Supabase 대시보드 → **SQL Editor** → **New query** 에 붙여넣고 **Run**:
+
+```sql
+alter table public.custom_categories
+  add column if not exists color text;
+```
+
+> [`supabase/schema.sql`](./supabase/schema.sql) 전체를 다시 실행해도 결과는 같아요.
+> 색을 안 고른 태그는 `null`로 남고, 앱이 팔레트에서 자동으로 색을 나눠 줍니다.

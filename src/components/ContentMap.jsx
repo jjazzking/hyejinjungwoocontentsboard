@@ -4,12 +4,7 @@ import MapLegend from './map/MapLegend.jsx'
 import PinMiniCard from './map/PinMiniCard.jsx'
 import NaverCanvas from './map/NaverCanvas.jsx'
 import { useNaverMapsScript } from './map/useNaverMapsScript.js'
-import {
-  NO_CATEGORY_COLOR,
-  NO_CATEGORY_LABEL,
-  buildCategoryColorMap,
-  contentColor,
-} from '../utils/categoryColors.js'
+import { NO_CATEGORY_COLOR, NO_CATEGORY_LABEL, contentColor } from '../utils/categoryColors.js'
 
 const isCoord = (value) => typeof value === 'number' && Number.isFinite(value)
 
@@ -38,10 +33,10 @@ function loadDistrictsPref() {
  *
  * items 는 Dashboard에서 이미 탭·태그·날짜 필터가 적용된 목록이라
  * 필터가 지도에도 그대로 반영된다.
- * categories 는 **보드 전체**의 카테고리 목록 — 필터를 걸어도 태그 색이 안 바뀌게 하려면
- * 지금 보이는 카드가 아니라 전체 목록을 기준으로 색을 나눠야 한다.
+ * colorMap 은 Dashboard가 **보드 전체 태그**로 만든 { 태그 → 색 } Map이다 —
+ * 여기서 따로 만들면 필터를 걸 때마다 핀 색이 바뀌고, 태그 관리 탭에서 고른 색도 안 먹는다.
  */
-export default function ContentMap({ items, categories = [], onOpen, onOpenCard, onEdit }) {
+export default function ContentMap({ items, colorMap, onOpen, onOpenCard, onEdit }) {
   const [selectedKey, setSelectedKey] = useState(null)
   // 스크립트는 멀쩡했지만 실제로 그리다가 깨진 경우 (인증 실패한 반쪽짜리 지도 등)
   const [naverBroken, setNaverBroken] = useState(false)
@@ -49,8 +44,6 @@ export default function ContentMap({ items, categories = [], onOpen, onOpenCard,
   const [zoom, setZoom] = useState(null)
   const naverState = useNaverMapsScript()
   const useNaver = naverState === 'ready' && !naverBroken
-
-  const colorMap = useMemo(() => buildCategoryColorMap(categories), [categories])
 
   // 좌표가 있는 장소만 핀으로 편다 (카드 하나에 장소가 여러 개면 여러 핀)
   const pins = useMemo(() => {

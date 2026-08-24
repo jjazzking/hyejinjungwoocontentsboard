@@ -7,6 +7,7 @@ import ClipboardPrompt from './ClipboardPrompt.jsx'
 import BulkAnalyzeButton from './BulkAnalyzeButton.jsx'
 import ShareToast from './ShareToast.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
+import CategoryManager from './CategoryManager.jsx'
 import CompletedCalendar from './CompletedCalendar.jsx'
 import MapErrorBoundary from './MapErrorBoundary.jsx'
 // 지도 라이브러리(Leaflet)가 꽤 커서, 지도 보기를 켤 때만 내려받게 분리한다
@@ -20,6 +21,8 @@ import { buildCategoryColorMap, contentColor } from '../utils/categoryColors.js'
 const TABS = [
   { key: 'PLANNING', label: '할 것들', emoji: '🗓️' },
   { key: 'COMPLETED', label: '한 것들', emoji: '✅' },
+  // 카드 탭이 아니라 관리 화면 — 태그 만들기·색 고르기가 여기 모여 있다
+  { key: 'CATEGORIES', label: '태그 관리', emoji: '🏷️' },
 ]
 
 /** 'YYYY-MM-DD' → '7월 12일' */
@@ -31,7 +34,7 @@ function formatDay(dateStr) {
 
 /**
  * 메인 대시보드.
- * - 상단 탭으로 PLANNING / COMPLETED 전환
+ * - 상단 탭으로 PLANNING / COMPLETED 전환 (+ 태그 관리 탭)
  * - '할 것들'은 태그 칩으로, '한 것들'은 달력의 날짜로 걸러서 볼 수 있다
  * - 목록은 **축약 카드**로 깔고, 누르면 풀 카드 시트가 뜬다.
  *   전부 풀 카드로 깔면 임베드·사진 때문에 한 화면에 두세 장밖에 안 들어온다
@@ -66,9 +69,14 @@ export default function Dashboard({
   const [picker, setPicker] = useState(null)
 
   const { suggestion, resolveSuggestion, checkClipboard, notice } = useClipboardSuggestion(contents)
-  const { categories, addCategory } = useCategories(contents)
-  // 축약 카드·지도 핀이 같은 태그 색을 쓰도록 한곳에서 만든다
-  const colorMap = useMemo(() => buildCategoryColorMap(categories), [categories])
+  const { categories, categoryColors, addCategory, setCategoryColor, removeCategory } =
+    useCategories(contents)
+  // 축약 카드·지도 핀·태그 칩이 같은 태그 색을 쓰도록 한곳에서 만든다.
+  // 태그 관리 탭에서 고른 색(categoryColors)이 있으면 그게 자동 색을 이긴다.
+  const colorMap = useMemo(
+    () => buildCategoryColorMap(categories, categoryColors),
+    [categories, categoryColors],
+  )
   // 다른 앱에서 공유로 넘어온 링크 (처음 뜰 때 한 번만 잡힌다)
   const sharedUrl = useSharedLink()
   // shareState: null | { status, title?, contentId? }
@@ -114,6 +122,17 @@ export default function Dashboard({
     onMove(movingId, targetId)
     setMovingId(null)
   }
+
+  // 태그별 카드 개수 — 관리 탭은 탭 구분 없이 보드 전체를 센다
+  const countByCategory = useMemo(() => {
+    const map = new Map()
+    for (const content of contents) {
+      for (const category of content.categories ?? []) {
+        map.set(category, (map.get(category) ?? 0) + 1)
+      }
+    }
+    return map
+  }, [contents])
 
   const countByStatus = useMemo(
     () =>
@@ -269,7 +288,7 @@ export default function Dashboard({
                 <span
                   className={`ml-1.5 text-xs ${isActive ? 'text-rose-100' : 'text-neutral-400'}`}
                 >
-                  {countByStatus[tab.key] ?? 0}
+                  {tab.key === 'CATEGORIES' ? categories.length : (countByStatus[tab.key] ?? 0)}
                 </span>
               </button>
             )
@@ -284,19 +303,37 @@ export default function Dashboard({
         </p>
       )}
 
-      {/* 탭별 보기 필터: 할 것들 = 태그 칩, 한 것들 = 달력 */}
+      {/* 탭별 보기 필터: 할 것들 = 태그 칩, 한 것들 = 달력 (태그 관리 탭은 필터가 없다) */}
       {!loading &&
+        activeTab !== 'CATEGORIES' &&
         (activeTab === 'PLANNING' ? (
           <CategoryFilter
             items={tabItems}
             categories={categories}
+            colorMap={colorMap}
             value={activeCategory}
             onChange={setCategoryFilter}
-            onAddCategory={addCategory}
           />
         ) : (
           <CompletedCalendar items={tabItems} selectedDate={dateFilter} onSelect={setDateFilter} />
         ))}
+
+      {/* 태그 관리 탭 — 카드 목록·지도 대신 이 화면만 뜬다 */}
+      {!loading && activeTab === 'CATEGORIES' && (
+        <CategoryManager
+          categories={categories}
+          colorMap={colorMap}
+          pickedColors={categoryColors}
+          counts={countByCategory}
+          onAdd={addCategory}
+          onPickColor={setCategoryColor}
+          onRemove={removeCategory}
+          onSelect={(category) => {
+            setActiveTab('PLANNING')
+            setCategoryFilter(category)
+          }}
+        />
+      )}
 
       {/* 이동 모드 안내 */}
       {movingId && (
@@ -307,7 +344,7 @@ export default function Dashboard({
 
       {/* 지도: 목록 위에 항상 떠 있고, 위의 필터가 핀에도 그대로 적용된다.
           외부 지도 스크립트가 터져도 보드는 살아 있어야 하므로 울타리를 두른다 */}
-      {!loading && (
+      {!loading && activeTab !== 'CATEGORIES' && (
         <MapErrorBoundary>
           <Suspense
             fallback={
@@ -319,7 +356,7 @@ export default function Dashboard({
           >
             <ContentMap
               items={filtered}
-              categories={categories}
+              colorMap={colorMap}
               onOpen={(pin) => setDetail({ id: pin.content.id, place: pin.place, color: pin.color })}
               onOpenCard={(id) => setDetail({ id })}
               onEdit={(content) => setModal({ mode: 'edit', content })}
@@ -329,7 +366,7 @@ export default function Dashboard({
       )}
 
       {/* 필터가 걸려 있을 때 지금 무엇을 보고 있는지 알려주는 한 줄 */}
-      {!loading && hasFilter && filtered.length > 0 && (
+      {!loading && activeTab !== 'CATEGORIES' && hasFilter && filtered.length > 0 && (
         <p className="mb-4 text-center text-sm text-neutral-500">
           {activeTab === 'PLANNING'
             ? `🏷️ '${activeCategory}' 태그 ${filtered.length}개`
@@ -338,7 +375,7 @@ export default function Dashboard({
       )}
 
       {/* 카드 매소너리: 카드 높이가 제각각이어도 컬럼 폭이 일정해 질서가 유지된다 */}
-      {loading ? (
+      {activeTab === 'CATEGORIES' ? null : loading ? (
         <div className="flex flex-col items-center gap-3 py-20 text-center">
           <span className="animate-pulse text-4xl">💌</span>
           <p className="text-sm text-neutral-400">보드를 불러오는 중…</p>
