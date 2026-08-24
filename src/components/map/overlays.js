@@ -21,10 +21,11 @@ export const MIN_ZOOM_DISTRICTS = 10
  * 파선으로도 해 봤는데 지도 위에 무늬가 하나 더 얹힌 것처럼 보여서 둘 다 실선이다.
  * 해안선은 데이터에 아예 없다 (밑의 지도가 이미 보여준다 — build 스크립트 참고).
  */
-// 경계선은 배경 정보라 핀·지도를 가리지 않을 만큼만 그린다.
-// 시(주황)를 구(회색)보다 조금 굵고 진하게 둬서 두 단계가 구분되게 한다.
-export const CITY_STYLE = { color: '#EA580C', weight: 2, opacity: 0.55 }
-export const DISTRICT_STYLE = { color: '#334155', weight: 1.2, opacity: 0.32 }
+// 얇게 줄였더니 이번엔 경계가 어디인지 잘 안 보여서 굵기를 다시 올린다.
+// 투명도는 낮춘 값 그대로 둬서 굵어져도 핀·지명을 덮지 않게 한다.
+// 시(주황)를 구(회색)보다 굵고 진하게 둬서 두 단계가 구분되게 한다.
+export const CITY_STYLE = { color: '#EA580C', weight: 3.5, opacity: 0.55 }
+export const DISTRICT_STYLE = { color: '#334155', weight: 2.2, opacity: 0.32 }
 
 /** 델타(1e-4도 정수 누적합)로 접어둔 경계선을 [lat, lng] 목록으로 되돌린다 */
 function decodeDistrictLine(flat) {
