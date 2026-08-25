@@ -11,9 +11,10 @@
  * - photo_urls         : String[] (완료 후 직접 찍은 사진)
  * - categories         : String[] (복수 선택 가능)
  * - places             : Place[]  (장소, 없을 수 있음)
- *     Place = { name, address, lat, lng, category, url, source }
+ *     Place = { name, address, lat, lng, category, url, source, time_slots, time_reason }
  *     source = 'MANUAL' | 'AI' | 'INSTAGRAM' | 'NAVER_LINK'
  *     lat/lng 는 null 가능 — 이름만 아는 장소는 지도에 뜨지 않는다
+ *     time_slots 는 그 장소 하나의 시간대. 비어 있으면 카드의 time_slots 를 따라간다
  * - memo               : String
  */
 export const MOCK_CONTENTS = [

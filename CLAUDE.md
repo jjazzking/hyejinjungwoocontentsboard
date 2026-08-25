@@ -129,18 +129,34 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 `places` 원소:
 
 ```js
-{ name, address, lat, lng, category, url, source }
+{ name, address, lat, lng, category, url, source, time_slots, time_reason }
 // source: MANUAL | AI | INSTAGRAM | NAVER_LINK  (MANUAL = 사용자가 확정함)
 // lat/lng 는 null 일 수 있다 (이름만 추가한 경우)
+// time_slots 는 그 장소 하나의 시간대. 비어 있으면 카드의 time_slots 를 따라간다
 ```
 
 `time_slots` 원소는 `MORNING` | `LUNCH` | `AFTERNOON` | `EVENING` | `NIGHT` 다섯 개뿐이다.
 사용자가 늘릴 수 있는 `categories`와 달리 **고정 enum**이다 — 나중에 데이트 코스의 슬롯으로
 써야 하므로 자유 문장이면 안 된다. 목록은 `src/utils/timeSlots.js`가 단일 출처이고
 두 Edge Function의 `TIME_SLOT_KEYS`와 프롬프트가 같은 목록을 복사해 갖고 있으니
-**셋을 함께 고쳐야 한다**. 카드에 장소가 여러 곳이어도 시간대는 카드 단위로 하나만 붙는다.
-`time_reason`은 AI가 그 시간대를 고른 근거 한 구절이다. 사람이 틀린 판단을 눈으로 잡아내라고
-두는 값이라(`place_debug`와 같은 취지) 카드 툴팁·폼에 보여주고, 사람이 칩을 직접 바꾸면 비운다.
+**셋을 함께 고쳐야 한다**.
+
+**시간대는 장소마다 붙는다.** 한 카드에 점심 국밥집과 야장이 같이 들어갈 수 있어서
+카드 하나에 시간대 하나로는 코스를 짤 수 없다. 그래서 값이 두 군데에 있다.
+
+| | 무엇 | 언제 쓰나 |
+|---|---|---|
+| `places[].time_slots` | 그 장소 하나의 시간대 | **코스를 짤 때 쓰는 진짜 값** |
+| `contents.time_slots` | 카드 기본값 | 장소가 없는 카드(홈데이트·온라인), 아직 장소별로 못 채운 곳의 폴백 |
+
+읽는 쪽에서 직접 고르지 말고 `src/utils/timeSlots.js`의 `resolveTimeSlots(place, content)`
+(장소 하나에 적용되는 값) 와 `cardTimeSlots(content)` (카드 대표 = 장소별 값의 합집합) 를 쓴다.
+`places`는 jsonb라 필드를 늘려도 컬럼 마이그레이션이 없지만, 옛 카드에는 키가 아예 없으므로
+**빈 값을 폴백으로 처리하는 경로를 지우면 안 된다**.
+
+`time_reason`은 AI가 그 시간대를 고른 근거 한 구절이다(장소별에도 같이 붙는다). 사람이 틀린
+판단을 눈으로 잡아내라고 두는 값이라(`place_debug`와 같은 취지) 카드 툴팁·폼에 보여주고,
+사람이 칩을 직접 바꾸면 비운다.
 
 읽어오는 컬럼 목록은 `useContents.js`의 `ROW_FIELDS`에 있다. 컬럼을 추가하면
 스키마 · `ROW_FIELDS` · 폼 · 카드를 함께 고쳐야 한다.

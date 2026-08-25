@@ -1,7 +1,12 @@
 // 시간대 일괄 분석 Edge Function.
 //
 // POST { cards: [{ title, memo, categories, places: [{ name, category }] }] }
-//  → { results: [{ no, time_slots, time_reason }] }
+//  → { results: [{ no, time_slots, time_reason, places: [{ i, time_slots, time_reason }] }] }
+//
+// 시간대는 카드가 아니라 **장소마다** 붙는다 — 한 카드에 점심 국밥집과 야장이 같이
+// 있을 수 있어서 카드 하나에 시간대 하나로는 코스를 짤 수 없기 때문이다.
+// 그래서 카드 기본값(time_slots)과 장소별 값(places[].time_slots)을 같이 돌려준다.
+// 장소는 입력에 붙인 1부터의 번호(i)로 짝을 맞춘다.
 //
 // 이미 만들어 둔 카드들의 '가기 좋은 시간대'를 뒤늦게 채우기 위한 함수다.
 // analyze-link 와 달리 원본 캡션이 남아 있지 않으므로 제목·메모·태그와
@@ -29,6 +34,9 @@ function json(status: number, body: unknown) {
 
 /** 한 번의 호출에서 받아줄 최대 카드 수 (응답이 잘리지 않는 선) */
 const MAX_CARDS = 25
+
+/** 카드 한 장에서 시간대를 판단해 줄 최대 장소 수 (analyze-link 의 MAX_PLACES 와 맞춤) */
+const MAX_PLACES = 6
 
 /**
  * 가기 좋은 시간대 화이트리스트.
@@ -72,15 +80,17 @@ function describeCard(card: CardInput, no: number) {
     : []
   if (categories.length > 0) lines.push(`    태그: ${categories.join(', ')}`)
 
+  // 장소마다 시간대를 따로 받아야 하므로 1부터 번호를 붙여 보여준다.
+  // 데이트 코스 게시물 한 장에 6곳까지 담기므로 상한도 그만큼 잡는다.
   const places = Array.isArray(card.places) ? card.places : []
-  for (const place of places.slice(0, 3)) {
+  places.slice(0, MAX_PLACES).forEach((place, i) => {
     const p = place as { name?: unknown; category?: unknown }
     const name = textOf(p.name, 60)
-    if (!name) continue
+    if (!name) return
     const category = textOf(p.category, 60)
     // 네이버 지역 검색이 붙여 준 분류라서 업종 판단의 가장 강한 근거다
-    lines.push(`    장소: ${name}${category ? ` (분류: ${category})` : ''}`)
-  }
+    lines.push(`    장소[${i + 1}]: ${name}${category ? ` (분류: ${category})` : ''}`)
+  })
 
   const memo = textOf(card.memo, 400)
   if (memo) lines.push(`    메모: ${memo}`)
@@ -94,13 +104,19 @@ const SYSTEM_PROMPT = `당신은 커플의 데이트·컨텐츠 아이디어 보
 
 {
   "results": [
-    { "no": 1, "time_slots": ["..."], "time_reason": "..." }
+    {
+      "no": 1,
+      "time_slots": ["..."],
+      "time_reason": "...",
+      "places": [{ "i": 1, "time_slots": ["..."], "time_reason": "..." }]
+    }
   ]
 }
 
 규칙:
 - 입력에 주어진 카드를 하나도 빠짐없이, 같은 개수로 돌려주세요.
 - time_slots: 그 카드의 장소·활동을 즐기기 좋은 시간대를 아래 5개 중에서 고르세요.
+  이건 **카드 기본값**입니다 (장소가 하나도 없는 카드에서 주로 쓰입니다).
   ★ 가능한 시간대를 전부 넣으세요. 하나만 고르려 하지 마세요.
     MORNING    아침(~11시)     등산, 해돋이, 조식, 오픈런
     LUNCH      점심(11~15시)   식사, 브런치, 낮술
@@ -134,6 +150,13 @@ const SYSTEM_PROMPT = `당신은 커플의 데이트·컨텐츠 아이디어 보
   ★ 위 5개 문자열 외에는 절대 쓰지 마세요.
 - time_reason: time_slots 를 그렇게 고른 근거를 15자 이내로 쓰세요.
   ("22시까지 영업", "야장 언급", "기본값: 카페"). 사람이 AI 판단을 검증하는 용도입니다.
+- places: 입력 카드에 "장소[1] …" 처럼 번호가 붙은 장소가 있으면, **그 장소마다 한 원소씩**
+  돌려주세요. i 는 입력에 붙은 번호를 그대로 옮겨 적습니다.
+  ★ 각 장소의 time_slots 는 위 규칙을 **그 장소 하나에만** 적용해서 고르세요.
+    곳마다 다른 게 정상입니다 — 국밥집은 LUNCH·EVENING, 야장은 NIGHT,
+    카페는 AFTERNOON. 같은 카드에 있다고 해서 전부 같은 시간대를 붙이지 마세요.
+    "점심은 여기 → 저녁은 여기"로 코스를 짜는 데 쓰는 값이라 여기가 제일 중요합니다.
+  ★ 장소 줄이 하나도 없는 카드면 places 는 빈 배열([])로 두세요.
 - no: 입력에 붙은 카드 번호를 그대로 옮겨 적으세요. 순서를 바꾸거나 빼먹지 마세요.`
 
 Deno.serve(async (req) => {
@@ -161,8 +184,8 @@ Deno.serve(async (req) => {
   try {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
-      // 카드 한 장당 50토큰 남짓 — 25장이어도 넉넉하게
-      max_tokens: 3000,
+      // 카드 한 장당 장소 6곳까지 시간대를 돌려주므로 200토큰 남짓 — 25장 기준으로 잡는다
+      max_tokens: 8000,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -191,14 +214,34 @@ Deno.serve(async (req) => {
   const results = []
   const seen = new Set<number>()
   for (const row of rows) {
-    const item = row as { no?: unknown; time_slots?: unknown; time_reason?: unknown }
+    const item = row as {
+      no?: unknown
+      time_slots?: unknown
+      time_reason?: unknown
+      places?: unknown
+    }
     const no = Number(item.no)
     // 범위를 벗어나거나 같은 번호를 두 번 준 경우는 짝을 맞출 수 없어 버린다
     if (!Number.isInteger(no) || no < 1 || no > cards.length || seen.has(no)) continue
     const timeSlots = sanitizeTimeSlots(item.time_slots)
-    if (timeSlots.length === 0) continue
+
+    // 장소별 시간대. 번호(i)가 입력 범위를 벗어나거나 중복이면 짝을 맞출 수 없어 버린다.
+    const places = []
+    const seenPlace = new Set<number>()
+    for (const entry of Array.isArray(item.places) ? item.places : []) {
+      const p = entry as { i?: unknown; time_slots?: unknown; time_reason?: unknown }
+      const i = Number(p.i)
+      if (!Number.isInteger(i) || i < 1 || i > MAX_PLACES || seenPlace.has(i)) continue
+      const slots = sanitizeTimeSlots(p.time_slots)
+      if (slots.length === 0) continue
+      seenPlace.add(i)
+      places.push({ i, time_slots: slots, time_reason: textOf(p.time_reason, 40) })
+    }
+
+    // 카드 기본값도 장소별 값도 못 건졌으면 돌려줄 게 없다
+    if (timeSlots.length === 0 && places.length === 0) continue
     seen.add(no)
-    results.push({ no, time_slots: timeSlots, time_reason: textOf(item.time_reason, 40) })
+    results.push({ no, time_slots: timeSlots, time_reason: textOf(item.time_reason, 40), places })
   }
 
   return json(200, {

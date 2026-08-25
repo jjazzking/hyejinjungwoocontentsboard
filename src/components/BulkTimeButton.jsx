@@ -12,7 +12,10 @@ import { needsTimeAnalysis } from '../utils/timeSlots.js'
  * (링크 재분석은 카드당 1분이 넘을 수 있어 한 장씩 돌리고 재개 장치까지 두지만,
  *  이쪽은 그럴 필요가 없어 단순하게 둔다.)
  *
- * - 시간대가 비어 있는 카드가 있으면 그 카드들만
+ * 시간대는 장소마다 붙으므로 카드 기본값뿐 아니라 **장소별 시간대까지** 채운다.
+ * 카드 단위로만 채워 둔 옛 카드도 그래서 다시 대상이 된다.
+ *
+ * - 아직 못 채운 곳이 남은 카드가 있으면 그 카드들만
  * - 전부 채워져 있으면 '전체 다시 분석'으로 바뀐다 (사람이 고친 값도 덮으므로 한 번 확인)
  */
 export default function BulkTimeButton({ contents, onUpdate }) {
@@ -89,12 +92,12 @@ export default function BulkTimeButton({ contents, onUpdate }) {
     <button
       type="button"
       onClick={start}
-      title="카드의 제목·메모·장소를 보고 가기 좋은 시간대를 AI가 채워줘요"
+      title="카드의 제목·메모·장소를 보고 장소마다 가기 좋은 시간대를 AI가 채워줘요"
       className="mt-3 rounded-full bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
     >
       {rescan
         ? `🕐 시간대 전체 다시 분석 (${targets.length}개)`
-        : `🕐 시간대 없는 카드 ${targets.length}개 분석`}
+        : `🕐 시간대 안 채운 카드 ${targets.length}개 분석`}
     </button>
   )
 }

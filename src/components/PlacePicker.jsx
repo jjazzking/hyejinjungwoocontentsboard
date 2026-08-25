@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { isPlaceSearchAvailable, searchPlaces, toStoredPlace } from '../utils/placeSearch.js'
+import { TIME_SLOTS, resolveTimeSlots, sanitizeTimeSlots } from '../utils/timeSlots.js'
 
 const SOURCE_LABEL = {
   AI: 'AI 추측',
@@ -15,8 +16,19 @@ const SOURCE_LABEL = {
  *
  * value/onChange 는 장소 배열을 그대로 주고받는다.
  * 한 카드에 여러 곳(맛집 투어 등)을 담을 수 있게 배열로 두었다.
+ *
+ * 시간대도 여기서 곳마다 따로 고른다 — 한 카드에 점심 국밥집과 야장이 같이 있을 수
+ * 있어서 카드 하나에 시간대 하나로는 코스를 짤 수 없기 때문이다.
+ * defaultSlots 는 카드 기본 시간대로, 아직 직접 고르지 않은 장소가 따라가는 값이다.
  */
-export default function PlacePicker({ value = [], onChange, hint = '', inputClass, labelClass }) {
+export default function PlacePicker({
+  value = [],
+  onChange,
+  defaultSlots = [],
+  hint = '',
+  inputClass,
+  labelClass,
+}) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -35,6 +47,24 @@ export default function PlacePicker({ value = [], onChange, hint = '', inputClas
   }
 
   const removePlace = (index) => onChange(value.filter((_, i) => i !== index))
+
+  /**
+   * 장소 하나의 시간대를 켜고 끈다.
+   * 아직 직접 고른 적이 없는 장소는 화면에 카드 기본값이 켜진 채로 보이므로,
+   * 편집도 그 값에서 출발해야 눌린 대로 바뀐다.
+   * 사람이 손댄 값이므로 AI 판단 근거는 지운다.
+   */
+  const toggleTimeSlot = (index, key) => {
+    onChange(
+      value.map((p, i) => {
+        if (i !== index) return p
+        const own = sanitizeTimeSlots(p.time_slots)
+        const base = own.length > 0 ? own : sanitizeTimeSlots(defaultSlots)
+        const next = base.includes(key) ? base.filter((k) => k !== key) : [...base, key]
+        return { ...p, time_slots: sanitizeTimeSlots(next), time_reason: '' }
+      }),
+    )
+  }
 
   /** 자동으로 찾아준 장소를 "맞다"고 확정 — 확인 필요 배지가 사라진다 */
   const confirmPlace = (index) =>
@@ -69,7 +99,17 @@ export default function PlacePicker({ value = [], onChange, hint = '', inputClas
   const addByName = () => {
     const trimmed = query.trim()
     if (!trimmed) return
-    addPlace({ name: trimmed, address: '', lat: null, lng: null, category: '', url: '', source: 'MANUAL' })
+    addPlace({
+      name: trimmed,
+      address: '',
+      lat: null,
+      lng: null,
+      category: '',
+      url: '',
+      source: 'MANUAL',
+      time_slots: [],
+      time_reason: '',
+    })
   }
 
   return (
@@ -86,57 +126,98 @@ export default function PlacePicker({ value = [], onChange, hint = '', inputClas
       {/* 선택된 장소들 */}
       {value.length > 0 && (
         <ul className="mb-2 flex flex-col gap-1.5">
-          {value.map((place, index) => (
-            <li
-              key={`${place.name}-${index}`}
-              className="flex items-start gap-2 rounded-lg bg-rose-50 px-3 py-2"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-neutral-800">
-                  {place.name}
-                  {SOURCE_LABEL[place.source] && (
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                      ⚠️ {SOURCE_LABEL[place.source]} · 확인해 주세요
-                    </span>
-                  )}
-                  {place.lat == null && (
-                    <span className="rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-600">
-                      좌표 없음
-                    </span>
-                  )}
-                </p>
-                {place.address && <p className="truncate text-xs text-neutral-500">{place.address}</p>}
-
-                {/* 자동으로 찾아준 장소는 확정하거나 다시 찾을 수 있게 한다 */}
-                {SOURCE_LABEL[place.source] && (
-                  <div className="mt-1.5 flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => confirmPlace(index)}
-                      className="rounded-full bg-rose-400 px-2.5 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-rose-500"
-                    >
-                      ✓ 맞아요
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => researchPlace(index)}
-                      className="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-medium text-neutral-600 ring-1 ring-neutral-200 transition-colors hover:bg-neutral-50"
-                    >
-                      🔍 다시 찾기
-                    </button>
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => removePlace(index)}
-                aria-label={`${place.name} 삭제`}
-                className="shrink-0 rounded-full px-1.5 text-sm text-neutral-400 transition-colors hover:bg-white hover:text-red-500"
+          {value.map((place, index) => {
+            // 이 장소에 실제로 적용 중인 시간대와, 그게 카드 기본값을 물려받은 것인지
+            const applied = resolveTimeSlots(place, { time_slots: defaultSlots })
+            const inherited = sanitizeTimeSlots(place.time_slots).length === 0
+            return (
+              <li
+                key={`${place.name}-${index}`}
+                className="flex items-start gap-2 rounded-lg bg-rose-50 px-3 py-2"
               >
-                ✕
-              </button>
-            </li>
-          ))}
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-neutral-800">
+                    {place.name}
+                    {SOURCE_LABEL[place.source] && (
+                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        ⚠️ {SOURCE_LABEL[place.source]} · 확인해 주세요
+                      </span>
+                    )}
+                    {place.lat == null && (
+                      <span className="rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-600">
+                        좌표 없음
+                      </span>
+                    )}
+                  </p>
+                  {place.address && <p className="truncate text-xs text-neutral-500">{place.address}</p>}
+
+                  {/* 자동으로 찾아준 장소는 확정하거나 다시 찾을 수 있게 한다 */}
+                  {SOURCE_LABEL[place.source] && (
+                    <div className="mt-1.5 flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => confirmPlace(index)}
+                        className="rounded-full bg-rose-400 px-2.5 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-rose-500"
+                      >
+                        ✓ 맞아요
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => researchPlace(index)}
+                        className="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-medium text-neutral-600 ring-1 ring-neutral-200 transition-colors hover:bg-neutral-50"
+                      >
+                        🔍 다시 찾기
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 이 장소의 시간대 — 코스를 짤 때 쓰는 진짜 값이라 곳마다 따로 고른다.
+                      아직 안 고른 곳은 카드 기본값이 옅게 켜진 채로 보인다 (지금 뭐가
+                      적용 중인지 화면에서 바로 알 수 있게). 누르는 순간 이 장소만의 값이 된다. */}
+                  <div className="mt-1.5">
+                    <div className="flex flex-wrap gap-1">
+                      {TIME_SLOTS.map((slot) => {
+                        const selected = applied.includes(slot.key)
+                        return (
+                          <button
+                            key={slot.key}
+                            type="button"
+                            onClick={() => toggleTimeSlot(index, slot.key)}
+                            aria-pressed={selected}
+                            title={slot.hint}
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 transition-colors ${
+                              selected
+                                ? inherited
+                                  ? 'bg-sky-50 text-sky-500 ring-sky-200 hover:bg-sky-100'
+                                  : 'bg-sky-500 text-white ring-sky-500 hover:bg-sky-600'
+                                : 'bg-white text-neutral-400 ring-neutral-200 hover:bg-sky-50 hover:text-sky-600'
+                            }`}
+                          >
+                            {slot.emoji} {slot.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="mt-1 text-[10px] text-neutral-400">
+                      {inherited
+                        ? '카드 기본 시간대를 따라가는 중 — 누르면 이 장소만 따로 정해요'
+                        : place.time_reason
+                          ? `🤖 AI 판단 근거: ${place.time_reason}`
+                          : '이 장소만의 시간대'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removePlace(index)}
+                  aria-label={`${place.name} 삭제`}
+                  className="shrink-0 rounded-full px-1.5 text-sm text-neutral-400 transition-colors hover:bg-white hover:text-red-500"
+                >
+                  ✕
+                </button>
+              </li>
+            )
+          })}
         </ul>
       )}
 
