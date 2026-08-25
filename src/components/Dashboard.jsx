@@ -5,6 +5,7 @@ import CategoryPicker from './CategoryPicker.jsx'
 import ContentFormModal from './ContentFormModal.jsx'
 import ClipboardPrompt from './ClipboardPrompt.jsx'
 import BulkAnalyzeButton from './BulkAnalyzeButton.jsx'
+import BulkTimeButton from './BulkTimeButton.jsx'
 import ShareToast from './ShareToast.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
 import CategoryManager from './CategoryManager.jsx'
@@ -260,6 +261,8 @@ export default function Dashboard({
             onUpdate={onUpdate}
             onOpenCard={(id) => setDetail({ id })}
           />
+          {/* 카드들의 '가기 좋은 시간대' 일괄 채우기 */}
+          <BulkTimeButton contents={contents} onUpdate={onUpdate} />
         </div>
       </header>
 

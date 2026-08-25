@@ -2,7 +2,7 @@
 //
 // POST { url?, caption?, categories: string[] }
 //  → 게시물의 캡션·썸네일을 서버에서 수집하고 Claude로 분석해
-//    { title, categories, memo, places } 카드 초안을 돌려준다.
+//    { title, categories, memo, time_slots, places } 카드 초안을 돌려준다.
 //  → caption이 함께 오면 수집을 건너뛰고 그 텍스트를 바로 분석한다
 //    (인스타그램이 서버 수집을 막을 때 사용자가 캡션을 직접 붙여넣는 경로).
 //  → 장소는 인스타 위치 태그(가장 정확) 또는 캡션에서 AI가 뽑은 검색어로
@@ -450,6 +450,20 @@ async function fetchPostMeta(url: string, platform: string): Promise<PostMeta | 
 }
 
 /**
+ * 가기 좋은 시간대 화이트리스트.
+ * 카테고리와 달리 사용자가 늘릴 수 없는 고정 목록이라, AI가 다른 문자열을
+ * 만들어내면 버리고 항상 시간 순서로 정렬해서 돌려준다.
+ * (프론트의 src/utils/timeSlots.js, analyze-time 과 같은 목록을 유지할 것)
+ */
+const TIME_SLOT_KEYS = ['MORNING', 'LUNCH', 'AFTERNOON', 'EVENING', 'NIGHT']
+
+function sanitizeTimeSlots(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const picked = new Set(value.filter((v): v is string => typeof v === 'string'))
+  return TIME_SLOT_KEYS.filter((key) => picked.has(key))
+}
+
+/**
  * 응답이 max_tokens에 걸려 중간에 끊겼는지 본다.
  * 괄호가 안 닫혔거나 문자열이 열린 채로 끝나면 잘린 것 — 형식 오류와 구분해서
  * 화면에 다른 사유를 보여주려고 따로 판단한다.
@@ -552,6 +566,8 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   "title": "카드 제목",
   "categories": ["..."],
   "memo": "간단한 메모",
+  "time_slots": ["가기 좋은 시간대"],
+  "time_reason": "그 시간대를 고른 근거",
   "places": [
     {
       "query": "지도에서 찾을 검색어",
@@ -574,6 +590,42 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   (예: "서울·부산 이색 데이트 5곳").
 - categories: 사용자가 준 카테고리 목록 중에서만 고르세요 (복수 가능, 맞는 게 없으면 빈 배열).
 - memo: 한두 문장. 위치·메뉴·팁 등 나중에 다시 볼 때 유용한 핵심 정보만. 캡션에 정보가 없으면 빈 문자열.
+- time_slots: 이 장소·활동을 즐기기 좋은 시간대를 아래 5개 중에서 고르세요.
+  ★ 가능한 시간대를 전부 넣으세요. 하나만 고르려 하지 마세요.
+    MORNING    아침(~11시)     등산, 해돋이, 조식, 오픈런
+    LUNCH      점심(11~15시)   식사, 브런치, 낮술
+    AFTERNOON  오후(15~18시)   카페, 디저트, 전시, 쇼핑, 산책
+    EVENING    저녁(18~21시)   저녁 식사, 야경, 공연
+    NIGHT      야간(21시~)     술집, 바, 포차, 야장, 심야식당
+
+  아래 순서로 판단하고, 위쪽에 근거가 있으면 아래는 무시하세요.
+  1순위 — 영업시간·운영시간이 적혀 있으면 그대로 따릅니다.
+    "11:00-15:00" → LUNCH  /  "18시 오픈" → EVENING, NIGHT  /  "새벽 2시까지" → NIGHT
+  2순위 — 아래 키워드가 있으면 업종 기본값을 덮어씁니다.
+    낮술·해장             → LUNCH 를 반드시 포함
+    브런치                → MORNING, LUNCH
+    야장·루프탑·야경·심야  → NIGHT 를 반드시 포함
+    오픈런·웨이팅         → 문 여는 시간대 하나만 (범위를 좁힙니다)
+    디너코스·오마카세      → EVENING
+    조식·일출·해돋이       → MORNING
+  3순위 — 위 근거가 없을 때만 업종 기본값을 씁니다.
+    카페·디저트·베이커리           → AFTERNOON
+    전시·미술관·공방·팝업·쇼핑      → AFTERNOON
+    술을 파는 곳(바·이자카야·포차)  → EVENING, NIGHT
+    일반 식사 메뉴를 파는 식당      → LUNCH, EVENING
+    공원·산책로·전망대·드라이브     → AFTERNOON, EVENING
+    체험·액티비티·스포츠           → AFTERNOON
+  ※ '노포'는 업종이 아니라 오래된 가게라는 뜻입니다. 술을 파는 곳이면 EVENING·NIGHT,
+     국밥·해장국처럼 식사 위주면 LUNCH·EVENING 으로 판단하세요.
+
+  ★ 판단할 근거가 전혀 없거나, 특정 장소가 없는 컨텐츠(집에서 요리, 온라인)면
+    빈 배열이 아니라 ["LUNCH","AFTERNOON","EVENING"] 을 쓰세요.
+    빈 배열은 "어느 시간에도 맞지 않는다"는 뜻이라 나중에 코스를 짤 때 제외됩니다.
+  ★ 위 5개 문자열 외에는 절대 쓰지 마세요.
+- time_reason: time_slots 를 그렇게 고른 근거를 15자 이내로 쓰세요.
+  ("22시까지 영업", "야장 언급", "기본값: 카페"). 사람이 AI 판단을 검증하는 용도입니다.
+  ※ 한 카드에 장소가 여러 곳이면 그 장소들을 **묶어서 다닐 만한 시간대**를 고르세요
+    (카드 한 장에 하나의 시간대 목록만 붙습니다).
 - places: 실제로 갈 수 있는 장소가 나오면 배열에 담으세요. 대부분은 한 곳이지만,
   맛집 투어·데이트 코스처럼 **한 게시물에 여러 장소가 나오면 언급된 곳을 전부 원소로 나눠 담으세요**
   (예: 카페 한 곳 + 식당 한 곳이면 배열 길이 2). 특정 장소가 없는 컨텐츠(집에서 하는 요리, 온라인 등)면
@@ -772,6 +824,8 @@ Deno.serve(async (req) => {
       ? draft.categories.filter((c: unknown) => typeof c === 'string' && categories.includes(c))
       : [],
     memo: typeof draft.memo === 'string' ? draft.memo.trim() : '',
+    time_slots: sanitizeTimeSlots(draft.time_slots),
+    time_reason: typeof draft.time_reason === 'string' ? draft.time_reason.trim().slice(0, 40) : '',
     places: foundPlaces,
     place_debug: reasons.join(' / '),
   })

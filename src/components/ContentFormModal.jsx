@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { uploadPhoto } from '../utils/uploadPhoto.js'
 import { analyzeCaption } from '../utils/linkAnalyzer.js'
 import PlacePicker from './PlacePicker.jsx'
+import { TIME_SLOTS, sanitizeTimeSlots } from '../utils/timeSlots.js'
 
 // 캡션 붙여넣기 → AI 자동 작성 영역을 숨겨둔다.
 // 지금은 안 쓰지만 나중에 다시 켤 수 있게 코드는 그대로 두고 이 값만 true로 바꾸면 된다.
@@ -17,6 +18,8 @@ const EMPTY_FORM = {
   photo_urls: '',
   categories: [],
   places: [],
+  time_slots: [],
+  time_reason: '',
   memo: '',
 }
 
@@ -65,6 +68,8 @@ export default function ContentFormModal({
         ...rest,
         categories: initial.categories ?? [],
         places: initial.places ?? [],
+        time_slots: sanitizeTimeSlots(initial.time_slots),
+        time_reason: initial.time_reason ?? '',
         photo_urls: (initial.photo_urls ?? []).join('\n'),
       })
     } else {
@@ -91,6 +96,15 @@ export default function ContentFormModal({
   const setUrl = (e) => {
     const url = e.target.value
     setForm((prev) => ({ ...prev, reference_url: url, reference_platform: guessPlatform(url) }))
+  }
+
+  // 시간대는 사람이 고칠 수 있어야 한다 — 손으로 바꾸면 더 이상 AI 판단이 아니므로 근거는 지운다
+  const toggleTimeSlot = (key) => {
+    setForm((prev) => {
+      const current = prev.time_slots ?? []
+      const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key]
+      return { ...prev, time_slots: sanitizeTimeSlots(next), time_reason: '' }
+    })
   }
 
   const toggleCategory = (name) => {
@@ -162,6 +176,8 @@ export default function ContentFormModal({
       ...form,
       title: form.title.trim(),
       places: form.places ?? [],
+      time_slots: sanitizeTimeSlots(form.time_slots),
+      time_reason: (form.time_reason ?? '').trim(),
       photo_urls: form.photo_urls
         .split('\n')
         .map((s) => s.trim())
@@ -317,6 +333,35 @@ export default function ContentFormModal({
                 ＋ 추가
               </button>
             </div>
+          </div>
+
+          <div>
+            <span className={labelClass}>가기 좋은 시간대 (복수 선택 가능)</span>
+            <div className="flex flex-wrap gap-2">
+              {TIME_SLOTS.map((slot) => {
+                const selected = (form.time_slots ?? []).includes(slot.key)
+                return (
+                  <button
+                    key={slot.key}
+                    type="button"
+                    onClick={() => toggleTimeSlot(slot.key)}
+                    aria-pressed={selected}
+                    title={slot.hint}
+                    className={`rounded-full px-3 py-1.5 text-sm font-medium ring-1 transition-colors ${
+                      selected
+                        ? 'bg-sky-500 text-white ring-sky-500 hover:bg-sky-600'
+                        : 'bg-white text-neutral-600 ring-neutral-200 hover:bg-sky-50 hover:ring-sky-200'
+                    }`}
+                  >
+                    {slot.emoji} {slot.label}
+                  </button>
+                )
+              })}
+            </div>
+            {/* AI가 왜 그렇게 골랐는지 보여줘서 틀린 판단을 바로 알아채게 한다 */}
+            {form.time_reason && (
+              <p className="mt-1.5 text-[11px] text-neutral-400">🤖 AI 판단 근거: {form.time_reason}</p>
+            )}
           </div>
 
           <PlacePicker

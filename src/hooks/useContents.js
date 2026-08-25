@@ -18,6 +18,8 @@ const ROW_FIELDS = [
   'photo_urls',
   'categories',
   'places',
+  'time_slots',
+  'time_reason',
   'memo',
 ]
 

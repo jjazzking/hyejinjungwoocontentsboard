@@ -9,6 +9,7 @@
  *                        → 링크·플랫폼만 채운 초안으로 대체
  */
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
+import { sanitizeTimeSlots } from './timeSlots.js'
 
 export function detectPlatform(url) {
   if (/instagram\.com/i.test(url)) return 'INSTAGRAM'
@@ -153,6 +154,8 @@ export async function analyzeCaption(caption, url, categoryOptions = []) {
     title: ai.title,
     categories: ai.categories ?? [],
     memo: ai.memo ?? '',
+    time_slots: ai.time_slots ?? [],
+    time_reason: ai.time_reason ?? '',
     places: ai.places ?? [],
     place_debug: ai.place_debug ?? '',
   }
@@ -175,6 +178,8 @@ export async function analyzeLink(url, categoryOptions = []) {
       reference_platform: platform,
       photo_urls: [],
       categories: ai.categories ?? [],
+      time_slots: ai.time_slots ?? [],
+      time_reason: ai.time_reason ?? '',
       places: ai.places ?? [],
       place_debug: ai.place_debug ?? '',
       analyzed: true,
@@ -197,6 +202,8 @@ export async function analyzeLink(url, categoryOptions = []) {
     reference_platform: platform,
     photo_urls: [],
     categories: guessCategories(`${title} ${author ?? ''}`),
+    time_slots: [],
+    time_reason: '',
     places: [],
     analyzed: false,
     // AI가 실패한 이유를 폼까지 들고 가서 그대로 보여준다 (빈 초안만 열리면 원인을 알 수 없다)
@@ -242,6 +249,13 @@ export function mergeReanalysis(content, draft) {
   const known = new Set((content.places ?? []).map((p) => p.name))
   const added = (draft.places ?? []).filter((p) => p?.name && !known.has(p.name))
   if (added.length > 0) patch.places = [...(content.places ?? []), ...added]
+
+  // 시간대는 아직 비어 있을 때만 채운다 — 사람이 골라둔 값은 재분석으로 덮지 않는다
+  const slots = sanitizeTimeSlots(draft.time_slots)
+  if (slots.length > 0 && sanitizeTimeSlots(content.time_slots).length === 0) {
+    patch.time_slots = slots
+    patch.time_reason = draft.time_reason ?? ''
+  }
 
   return patch
 }
