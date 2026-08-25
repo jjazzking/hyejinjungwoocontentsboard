@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import MediaEmbed from './embeds/MediaEmbed.jsx'
 import PhotoCarousel from './PhotoCarousel.jsx'
+import { toTimeSlotChips } from '../utils/timeSlots.js'
 
 const PLATFORM_LABEL = {
   INSTAGRAM: { name: 'Instagram', className: 'bg-gradient-to-r from-fuchsia-500 to-orange-400 text-white' },
@@ -122,8 +123,21 @@ export default function ContentCard({
   onDelete,
   onToggleStatus,
 }) {
-  const { title, status, date, reference_url, reference_platform, photo_urls, categories, places, memo } =
-    content
+  const {
+    title,
+    status,
+    date,
+    reference_url,
+    reference_platform,
+    photo_urls,
+    categories,
+    places,
+    time_slots,
+    time_reason,
+    memo,
+  } = content
+
+  const timeChips = toTimeSlotChips(time_slots)
 
   const isCompleted = status === 'COMPLETED'
   const showPhotos = isCompleted && photo_urls.length > 0
@@ -209,6 +223,20 @@ export default function ContentCard({
         <time dateTime={date} className="text-xs text-neutral-400">
           {formatDate(date)}
         </time>
+
+        {/* 가기 좋은 시간대 — AI 판단이라 근거(time_reason)를 툴팁으로 붙여 눈으로 검증할 수 있게 한다 */}
+        {timeChips.length > 0 && (
+          <div className="flex flex-wrap gap-1" title={time_reason || undefined}>
+            {timeChips.map((slot) => (
+              <span
+                key={slot.key}
+                className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-600 ring-1 ring-sky-100"
+              >
+                {slot.emoji} {slot.label}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* 장소: 네이버 지도 링크가 있으면 눌러서 바로 열 수 있게 */}
         {(places ?? []).length > 0 && (

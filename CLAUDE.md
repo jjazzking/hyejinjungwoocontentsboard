@@ -39,6 +39,8 @@ src/
     map/PinMiniCard.jsx       핀 탭 → 지도 위 축약 카드 (누르면 ContentSheet)
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
+    BulkAnalyzeButton.jsx     분석 안 된 카드 일괄 재분석 (한 장씩 · 끊겨도 재개)
+    BulkTimeButton.jsx        카드들의 '가기 좋은 시간대' 일괄 채우기 (20장씩 묶어 호출)
     ShareToast.jsx            공유로 받은 링크의 저장 결과 알림 (+ 수정하기)
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
   hooks/
@@ -49,6 +51,8 @@ src/
   utils/
     linkAnalyzer.js           링크 → 카드 초안 (Edge Function 호출, oEmbed 폴백)
     placeSearch.js            장소 검색 Edge Function 호출
+    timeSlots.js              '가기 좋은 시간대' 고정 목록 · 정규화 (프론트 단일 출처)
+    analyzeTimeSlots.js       기존 카드들의 시간대 일괄 분석 호출 (20장씩 · 진행률)
     categoryColors.js         태그 → 색 (직접 고른 색 우선 · 나머지는 팔레트 자동 배정)
     uploadPhoto.js            Supabase Storage 업로드
   data/
@@ -62,7 +66,8 @@ scripts/
   build-map-overlays.mjs      위 JSON을 공개 데이터에서 만들어 내는 스크립트
 supabase/
   schema.sql                  테이블 · RLS · 마이그레이션 SQL
-  functions/analyze-link/     Claude로 링크 분석 + 장소 자동 검색
+  functions/analyze-link/     Claude로 링크 분석 + 장소 자동 검색 + 시간대 판단
+  functions/analyze-time/     기존 카드들의 시간대만 일괄 재분석 (배치)
   functions/place-search/     네이버 지역 검색 프록시
   functions/instagram-webhook/ 인스타 DM 웹훅 (검증용 탐침 — payload를 로그로만 남긴다)
 docs/MAP_FEATURE.md           지도 기능 기획 노트 (아직 미구현 단계 포함)
@@ -119,7 +124,7 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 
 `contents` 행의 주요 필드: `title`, `status`(`PLANNING`|`COMPLETED`), `date`,
 `categories`(text[]), `memo`, `photo_urls`(text[]), `reference_url`,
-`reference_platform`, `places`(jsonb), `sort_order`.
+`reference_platform`, `places`(jsonb), `time_slots`(text[]), `time_reason`, `sort_order`.
 
 `places` 원소:
 
@@ -128,6 +133,14 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 // source: MANUAL | AI | INSTAGRAM | NAVER_LINK  (MANUAL = 사용자가 확정함)
 // lat/lng 는 null 일 수 있다 (이름만 추가한 경우)
 ```
+
+`time_slots` 원소는 `MORNING` | `LUNCH` | `AFTERNOON` | `EVENING` | `NIGHT` 다섯 개뿐이다.
+사용자가 늘릴 수 있는 `categories`와 달리 **고정 enum**이다 — 나중에 데이트 코스의 슬롯으로
+써야 하므로 자유 문장이면 안 된다. 목록은 `src/utils/timeSlots.js`가 단일 출처이고
+두 Edge Function의 `TIME_SLOT_KEYS`와 프롬프트가 같은 목록을 복사해 갖고 있으니
+**셋을 함께 고쳐야 한다**. 카드에 장소가 여러 곳이어도 시간대는 카드 단위로 하나만 붙는다.
+`time_reason`은 AI가 그 시간대를 고른 근거 한 구절이다. 사람이 틀린 판단을 눈으로 잡아내라고
+두는 값이라(`place_debug`와 같은 취지) 카드 툴팁·폼에 보여주고, 사람이 칩을 직접 바꾸면 비운다.
 
 읽어오는 컬럼 목록은 `useContents.js`의 `ROW_FIELDS`에 있다. 컬럼을 추가하면
 스키마 · `ROW_FIELDS` · 폼 · 카드를 함께 고쳐야 한다.

@@ -21,6 +21,11 @@ create table if not exists public.contents (
   -- 장소 목록. [{ name, address, lat, lng, category, url, source }]
   -- 좌표(lat/lng)는 없을 수 있다 — 이름만 아는 장소도 저장 가능
   places             jsonb not null default '[]'::jsonb,
+  -- 가기 좋은 시간대. MORNING | LUNCH | AFTERNOON | EVENING | NIGHT 중 복수 선택.
+  -- AI가 채우고 사람이 폼에서 고칠 수 있다. 빈 배열 = 아직 분석 안 함
+  time_slots         text[] not null default '{}',
+  -- 위 판단의 근거 한 구절 ("캡션에 22시까지 영업"). AI가 틀렸는지 눈으로 확인하는 용도
+  time_reason        text not null default '',
   memo               text not null default '',
   sort_order         double precision not null default extract(epoch from now()),
   created_at         timestamptz not null default now(),
@@ -32,6 +37,12 @@ create index if not exists contents_status_sort_idx on public.contents (status, 
 -- 이미 테이블을 만들어 둔 경우를 위한 추가 컬럼 (없으면 만들고, 있으면 건너뜀)
 alter table public.contents
   add column if not exists places jsonb not null default '[]'::jsonb;
+
+alter table public.contents
+  add column if not exists time_slots text[] not null default '{}';
+
+alter table public.contents
+  add column if not exists time_reason text not null default '';
 
 -- updated_at 자동 갱신
 create or replace function public.set_updated_at()

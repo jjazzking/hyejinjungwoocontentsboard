@@ -382,3 +382,58 @@ alter table public.custom_categories
 
 > [`supabase/schema.sql`](./supabase/schema.sql) 전체를 다시 실행해도 결과는 같아요.
 > 색을 안 고른 태그는 `null`로 남고, 앱이 팔레트에서 자동으로 색을 나눠 줍니다.
+
+---
+
+## 11. 가기 좋은 시간대 채우기 (선택)
+
+카드마다 **"이 장소는 언제 가면 좋은지"**(아침/점심/오후/저녁/야간)를 AI가 판단해서
+붙여 줍니다. 나중에 데이트 코스를 짤 때 쓸 재료라, 자유 문장이 아니라 **정해진 5개 값**
+중에서만 고르게 되어 있어요. AI가 고른 값은 카드 수정 폼에서 직접 바꿀 수 있습니다.
+
+### 11-1. DB에 컬럼 추가 ⚠️ 먼저 할 것
+
+**코드 배포보다 먼저 해야 합니다.** 컬럼이 없는 상태에서 새 코드가 카드를 저장하면
+저장이 전부 실패해요.
+
+Supabase 대시보드 → **SQL Editor** 에서 아래를 실행합니다
+([`supabase/schema.sql`](./supabase/schema.sql) 전체를 다시 붙여넣어도 됩니다 —
+여러 번 실행해도 안전해요).
+
+```sql
+alter table public.contents
+  add column if not exists time_slots text[] not null default '{}';
+
+alter table public.contents
+  add column if not exists time_reason text not null default '';
+```
+
+### 11-2. 새로 만드는 카드에 자동으로 붙이기
+
+`analyze-link` 함수를 [최신 코드](./supabase/functions/analyze-link/index.ts)로
+**재배포**하면, 링크를 붙여넣어 만드는 카드에 시간대가 같이 채워집니다.
+(6번에서 이미 배포했더라도 한 번 더 배포해야 해요 — 프롬프트가 바뀌었습니다.)
+
+### 11-3. 이미 만들어 둔 카드 일괄 채우기
+
+예전에 만든 카드들은 원본 캡션이 남아 있지 않아서, 제목·메모·태그·장소를 근거로
+다시 판단하는 **별도 함수**를 씁니다.
+
+1. Supabase 대시보드 → **Edge Functions** → **Deploy a new function**
+2. Function name: `analyze-time`
+3. 내용: [`supabase/functions/analyze-time/index.ts`](./supabase/functions/analyze-time/index.ts) 전체 붙여넣기
+4. **Verify JWT** 는 끄기 (`analyze-link`와 동일)
+5. 6-1에서 등록한 `ANTHROPIC_API_KEY` 시크릿을 그대로 씁니다 (추가 키 없음)
+
+배포한 뒤 보드 상단(‘분석 안 된 카드 다시 분석’ 버튼 아래)에
+**🕐 시간대 없는 카드 N개 분석** 버튼이 생깁니다.
+
+- 시간대가 비어 있는 카드가 있으면 **그 카드들만** 분석합니다
+- 전부 채워져 있으면 라벨이 **🕐 시간대 전체 다시 분석**으로 바뀌고,
+  누르면 직접 고쳐둔 값까지 다시 씁니다 (확인 창이 한 번 뜹니다)
+- 카드는 20개씩 끊어서 보내고 `12/47` 형태로 진행 상황이 표시됩니다
+- 일부만 실패해도 성공한 카드는 그대로 저장하고, 실패 사유를 화면에 남깁니다
+
+> 링크 재분석(6번)과 달리 게시물을 다시 수집하지 않아서 **훨씬 빠르고 쌉니다.**
+> 카드를 20개씩 묶어 보내므로 카드 수만큼 호출이 늘지 않고, Claude Haiku 기준
+> 카드 100개에 몇십 원 수준입니다.
