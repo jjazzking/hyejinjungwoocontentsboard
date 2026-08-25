@@ -18,10 +18,14 @@ create table if not exists public.contents (
                      check (reference_platform in ('INSTAGRAM', 'YOUTUBE', 'TIKTOK', 'NONE')),
   photo_urls         text[] not null default '{}',
   categories         text[] not null default '{}',
-  -- 장소 목록. [{ name, address, lat, lng, category, url, source }]
+  -- 장소 목록. [{ name, address, lat, lng, category, url, source, time_slots, time_reason }]
   -- 좌표(lat/lng)는 없을 수 있다 — 이름만 아는 장소도 저장 가능
+  -- time_slots 는 그 장소 하나에 가기 좋은 시간대다. 한 카드에 점심 국밥집과 야장이
+  -- 같이 들어갈 수 있어서 시간대는 카드가 아니라 장소에 붙는다. 비어 있으면 아래
+  -- contents.time_slots 를 따라간다. jsonb 안이라 컬럼 마이그레이션은 필요 없다.
   places             jsonb not null default '[]'::jsonb,
-  -- 가기 좋은 시간대. MORNING | LUNCH | AFTERNOON | EVENING | NIGHT 중 복수 선택.
+  -- 카드 기본 시간대. MORNING | LUNCH | AFTERNOON | EVENING | NIGHT 중 복수 선택.
+  -- 장소가 없는 카드(홈데이트·온라인)와, 아직 장소별로 못 채운 곳의 폴백으로 쓴다.
   -- AI가 채우고 사람이 폼에서 고칠 수 있다. 빈 배열 = 아직 분석 안 함
   time_slots         text[] not null default '{}',
   -- 위 판단의 근거 한 구절 ("캡션에 22시까지 영업"). AI가 틀렸는지 눈으로 확인하는 용도

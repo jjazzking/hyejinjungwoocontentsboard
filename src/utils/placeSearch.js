@@ -35,7 +35,11 @@ export async function searchPlaces(query) {
   }
 }
 
-/** 검색 결과 한 건을 카드에 저장할 형태로 정리한다. */
+/**
+ * 검색 결과 한 건을 카드에 저장할 형태로 정리한다.
+ * time_slots 는 빈 채로 둔다 — 사람이 폼에서 고르거나 AI가 채우기 전까지는
+ * 카드 기본 시간대를 따라간다 (src/utils/timeSlots.js resolveTimeSlots).
+ */
 export function toStoredPlace(place, source = 'MANUAL') {
   return {
     name: place.name,
@@ -45,5 +49,7 @@ export function toStoredPlace(place, source = 'MANUAL') {
     category: place.category ?? '',
     url: place.url ?? '',
     source,
+    time_slots: [],
+    time_reason: '',
   }
 }

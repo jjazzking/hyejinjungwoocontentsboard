@@ -175,7 +175,12 @@ export default function ContentFormModal({
     onSave({
       ...form,
       title: form.title.trim(),
-      places: form.places ?? [],
+      // 장소별 시간대도 카드 것과 같은 화이트리스트를 통과시킨다
+      places: (form.places ?? []).map((place) => ({
+        ...place,
+        time_slots: sanitizeTimeSlots(place.time_slots),
+        time_reason: (place.time_reason ?? '').trim(),
+      })),
       time_slots: sanitizeTimeSlots(form.time_slots),
       time_reason: (form.time_reason ?? '').trim(),
       photo_urls: form.photo_urls
@@ -335,8 +340,14 @@ export default function ContentFormModal({
             </div>
           </div>
 
+          {/* 카드 기본 시간대. 장소가 붙으면 이 값은 '장소별로 안 고른 곳'에만 적용되므로
+              라벨로 그 역할을 밝힌다 — 안 그러면 아래 장소 칩과 뭐가 다른지 알 수 없다. */}
           <div>
-            <span className={labelClass}>가기 좋은 시간대 (복수 선택 가능)</span>
+            <span className={labelClass}>
+              {form.places.length > 0
+                ? '카드 기본 시간대 (장소별로 안 고른 곳에 적용)'
+                : '가기 좋은 시간대 (복수 선택 가능)'}
+            </span>
             <div className="flex flex-wrap gap-2">
               {TIME_SLOTS.map((slot) => {
                 const selected = (form.time_slots ?? []).includes(slot.key)
@@ -367,6 +378,7 @@ export default function ContentFormModal({
           <PlacePicker
             value={form.places}
             onChange={(places) => setForm((prev) => ({ ...prev, places }))}
+            defaultSlots={form.time_slots}
             hint={form.places.length === 0 ? placeDebug : ''}
             inputClass={inputClass}
             labelClass={labelClass}

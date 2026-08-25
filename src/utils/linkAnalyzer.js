@@ -233,7 +233,8 @@ export function needsReanalysis(content) {
  * 재분석 결과를 기존 카드에 얹을 패치를 만든다.
  * **사용자가 손댄 값은 절대 덮어쓰지 않는다** — 제목은 대체 제목일 때만 바꾸고,
  * 메모는 비어 있을 때만 채우며, 태그·장소는 기존 것에 더하기만 한다.
- * 바뀔 게 없으면 빈 객체를 돌려준다.
+ * 이미 있는 장소는 시간대가 비어 있을 때만 채운다 (좌표·주소는 사용자가 확정해 둔
+ * 값일 수 있어 건드리지 않는다). 바뀔 게 없으면 빈 객체를 돌려준다.
  */
 export function mergeReanalysis(content, draft) {
   const patch = {}
@@ -246,9 +247,21 @@ export function mergeReanalysis(content, draft) {
   const categories = [...new Set([...before, ...(draft.categories ?? [])])]
   if (categories.length !== before.length) patch.categories = categories
 
+  // 이미 있는 장소는 그대로 두되, 시간대만 아직 비어 있으면 재분석 결과로 채운다
+  const drafted = new Map((draft.places ?? []).filter((p) => p?.name).map((p) => [p.name, p]))
+  let placesChanged = false
+  const merged = (content.places ?? []).map((place) => {
+    if (sanitizeTimeSlots(place.time_slots).length > 0) return place
+    const found = drafted.get(place.name)
+    const slots = sanitizeTimeSlots(found?.time_slots)
+    if (slots.length === 0) return place
+    placesChanged = true
+    return { ...place, time_slots: slots, time_reason: found.time_reason ?? '' }
+  })
+
   const known = new Set((content.places ?? []).map((p) => p.name))
   const added = (draft.places ?? []).filter((p) => p?.name && !known.has(p.name))
-  if (added.length > 0) patch.places = [...(content.places ?? []), ...added]
+  if (added.length > 0 || placesChanged) patch.places = [...merged, ...added]
 
   // 시간대는 아직 비어 있을 때만 채운다 — 사람이 골라둔 값은 재분석으로 덮지 않는다
   const slots = sanitizeTimeSlots(draft.time_slots)

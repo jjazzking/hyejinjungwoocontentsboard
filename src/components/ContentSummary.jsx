@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toTimeSlotChips } from '../utils/timeSlots.js'
+import { cardTimeSlots, timeSlotHint, toTimeSlotChips } from '../utils/timeSlots.js'
 
 /**
  * 축약 카드 — 목록과 지도에서 공통으로 쓰는 **한 줄짜리 요약**.
@@ -116,11 +116,12 @@ export default function ContentSummary({
   onDelete,
   onToggleStatus,
 }) {
-  const { title, status, date, reference_platform, photo_urls, categories, places, time_slots, time_reason, memo } =
-    content
+  const { title, status, date, reference_platform, photo_urls, categories, places, memo } = content
 
   // 축약 카드는 한 줄이 좁아서 라벨 없이 이모지만 붙인다 (풀 카드에서 칩으로 제대로 보여준다)
-  const timeChips = toTimeSlotChips(time_slots)
+  // 장소마다 시간대가 다를 수 있으므로 합쳐서 표시하고, 내역은 툴팁으로 넘긴다
+  const timeChips = toTimeSlotChips(cardTimeSlots(content))
+  const timeHint = timeSlotHint(content)
   const isCompleted = status === 'COMPLETED'
   const thumbnail = isCompleted ? photo_urls?.[0] : null
   const mark = PLATFORM_MARK[reference_platform] ?? '💌'
@@ -195,7 +196,7 @@ export default function ContentSummary({
         <p className="mt-1 truncate text-xs text-neutral-400">
           {formatDate(date)}
           {timeChips.length > 0 && (
-            <span className="ml-1" title={time_reason || timeChips.map((s) => s.label).join('·')}>
+            <span className="ml-1" title={timeHint || timeChips.map((s) => s.label).join('·')}>
               {timeChips.map((slot) => slot.emoji).join('')}
             </span>
           )}

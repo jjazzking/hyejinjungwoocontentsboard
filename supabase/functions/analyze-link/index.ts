@@ -79,6 +79,11 @@ interface Place {
   category: string
   url: string
   source: 'INSTAGRAM' | 'AI'
+  // 이 장소 하나에 가기 좋은 시간대. 카드가 아니라 장소에 붙는 이유는
+  // 한 게시물에 점심 국밥집과 야장이 같이 나올 수 있기 때문이다.
+  // 비어 있으면 프론트가 카드 기본값으로 떨어뜨린다 (src/utils/timeSlots.js).
+  time_slots: string[]
+  time_reason: string
 }
 
 // ── 네이버 지역 검색 (place-search 함수와 같은 규격) ───────────────
@@ -136,6 +141,9 @@ async function findPlace(
         category: stripTags(item.category),
         url: `https://map.naver.com/p/search/${encodeURIComponent(name)}`,
         source,
+        // 시간대는 검색이 아니라 AI 판단에서 오므로 여기서는 비워 두고 뒤에서 얹는다
+        time_slots: [],
+        time_reason: '',
       },
       debug: '',
     }
@@ -192,6 +200,8 @@ async function geocodeAddress(
         category: '',
         url: `https://map.naver.com/p/search/${encodeURIComponent(name || address)}`,
         source: 'AI',
+        time_slots: [],
+        time_reason: '',
       },
       debug: '',
     }
@@ -572,7 +582,9 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
     {
       "query": "지도에서 찾을 검색어",
       "name": "가게/장소 이름만 (지역명 없이)",
-      "address": "캡션에 적힌 실제 도로명/지번주소"
+      "address": "캡션에 적힌 실제 도로명/지번주소",
+      "time_slots": ["이 장소에 가기 좋은 시간대"],
+      "time_reason": "이 장소를 그 시간대로 고른 근거"
     }
   ]
 }
@@ -624,8 +636,10 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   ★ 위 5개 문자열 외에는 절대 쓰지 마세요.
 - time_reason: time_slots 를 그렇게 고른 근거를 15자 이내로 쓰세요.
   ("22시까지 영업", "야장 언급", "기본값: 카페"). 사람이 AI 판단을 검증하는 용도입니다.
-  ※ 한 카드에 장소가 여러 곳이면 그 장소들을 **묶어서 다닐 만한 시간대**를 고르세요
-    (카드 한 장에 하나의 시간대 목록만 붙습니다).
+  ※ 최상위 time_slots/time_reason 은 **카드 기본값**입니다. 장소가 하나도 없는
+    컨텐츠(집에서 요리, 온라인)에서 주로 쓰이고, 장소가 있으면 그 장소들을
+    묶어서 다닐 만한 시간대를 적어 두세요. 실제로 코스를 짤 때 쓰는 값은
+    아래 places[].time_slots 이므로 그쪽을 더 신경 써서 채우세요.
 - places: 실제로 갈 수 있는 장소가 나오면 배열에 담으세요. 대부분은 한 곳이지만,
   맛집 투어·데이트 코스처럼 **한 게시물에 여러 장소가 나오면 언급된 곳을 전부 원소로 나눠 담으세요**
   (예: 카페 한 곳 + 식당 한 곳이면 배열 길이 2). 특정 장소가 없는 컨텐츠(집에서 하는 요리, 온라인 등)면
@@ -644,6 +658,11 @@ SNS 게시물의 캡션(과 썸네일 이미지)을 보고 아래 JSON만 출력
   - address: 캡션에 도로명주소나 지번주소가 문자 그대로 적혀 있으면 그대로 옮겨 적으세요
     (예: "서울 마포구 와우산로 12"). 캡션에 주소가 없으면 빈 문자열로 두세요.
     절대 지어내지 마세요 — 상호명으로 장소를 못 찾았을 때 주소로 좌표를 찾는 데만 씁니다.
+  - time_slots / time_reason: 위 time_slots 규칙을 **그 장소 하나에만** 적용해서 고르세요.
+    ★ 곳마다 다른 게 정상입니다. 점심 국밥집은 LUNCH, 야장은 NIGHT, 카페는 AFTERNOON —
+    한 게시물에 나온 장소라고 해서 같은 시간대를 붙이지 마세요.
+    캡션에 그 가게의 영업시간이 따로 적혀 있으면 그 가게에만 반영하세요.
+    나중에 "점심은 여기 → 저녁은 여기"로 코스를 짜는 데 쓰는 값이라 여기가 제일 중요합니다.
 - 광고 문구는 memo에 옮기지 마세요. 다만 해시태그는 지역명·가게 이름을 알아내는 근거로는
   적극적으로 활용하세요 (memo·title의 말투에만 섞지 않으면 됩니다).`
 
@@ -761,9 +780,13 @@ Deno.serve(async (req) => {
   // AI가 캡션에서 하나도 못 찾았을 때의 폴백으로만 쓴다. 실패해도 초안은 그대로 돌려준다.
   const tagged = meta.locationName?.trim() ?? ''
   const MAX_PLACES = 6 // 오탐·과도한 검색 호출을 막는 상한
-  const placeGuesses: Array<{ query: string; name: string; address: string }> = Array.isArray(
-    draft.places,
-  )
+  const placeGuesses: Array<{
+    query: string
+    name: string
+    address: string
+    timeSlots: string[]
+    timeReason: string
+  }> = Array.isArray(draft.places)
     ? draft.places
         .map((entry: unknown) => {
           const p = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
@@ -771,6 +794,10 @@ Deno.serve(async (req) => {
             query: typeof p.query === 'string' ? p.query.trim() : '',
             name: typeof p.name === 'string' ? p.name.trim() : '',
             address: typeof p.address === 'string' ? p.address.trim() : '',
+            // 장소별 시간대 — 검색 결과에 얹어서 돌려준다
+            timeSlots: sanitizeTimeSlots(p.time_slots),
+            timeReason:
+              typeof p.time_reason === 'string' ? p.time_reason.trim().slice(0, 40) : '',
           }
         })
         .filter((p) => p.query || p.name || p.address)
@@ -798,7 +825,13 @@ Deno.serve(async (req) => {
     if (found.place) {
       if (!seenNames.has(found.place.name)) {
         seenNames.add(found.place.name)
-        foundPlaces.push(found.place)
+        // 검색은 좌표·분류만 주므로, 시간대는 AI가 그 장소에 대해 판단한 값을 얹는다.
+        // 비어 있으면 프론트가 카드 기본 시간대로 떨어뜨린다.
+        foundPlaces.push({
+          ...found.place,
+          time_slots: guess.timeSlots,
+          time_reason: guess.timeSlots.length > 0 ? guess.timeReason : '',
+        })
       }
     } else if (found.debug) {
       reasons.push(found.debug)

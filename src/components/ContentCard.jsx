@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import MediaEmbed from './embeds/MediaEmbed.jsx'
 import PhotoCarousel from './PhotoCarousel.jsx'
-import { toTimeSlotChips } from '../utils/timeSlots.js'
+import { cardTimeSlots, timeSlotHint, toTimeSlotChips } from '../utils/timeSlots.js'
 
 const PLATFORM_LABEL = {
   INSTAGRAM: { name: 'Instagram', className: 'bg-gradient-to-r from-fuchsia-500 to-orange-400 text-white' },
@@ -132,12 +132,14 @@ export default function ContentCard({
     photo_urls,
     categories,
     places,
-    time_slots,
-    time_reason,
     memo,
   } = content
 
-  const timeChips = toTimeSlotChips(time_slots)
+  // 시간대는 장소마다 다를 수 있어서 장소별 값을 합쳐 보여준다
+  // (장소가 없는 카드면 카드 기본값 그대로)
+  const timeChips = toTimeSlotChips(cardTimeSlots(content))
+  // 어느 곳이 왜 그 시간대인지는 툴팁으로 풀어 준다
+  const timeHint = timeSlotHint(content)
 
   const isCompleted = status === 'COMPLETED'
   const showPhotos = isCompleted && photo_urls.length > 0
@@ -224,9 +226,9 @@ export default function ContentCard({
           {formatDate(date)}
         </time>
 
-        {/* 가기 좋은 시간대 — AI 판단이라 근거(time_reason)를 툴팁으로 붙여 눈으로 검증할 수 있게 한다 */}
+        {/* 가기 좋은 시간대 — AI 판단이라 근거를 툴팁으로 붙여 눈으로 검증할 수 있게 한다 */}
         {timeChips.length > 0 && (
-          <div className="flex flex-wrap gap-1" title={time_reason || undefined}>
+          <div className="flex flex-wrap gap-1" title={timeHint || undefined}>
             {timeChips.map((slot) => (
               <span
                 key={slot.key}
