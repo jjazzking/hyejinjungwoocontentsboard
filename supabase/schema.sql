@@ -31,6 +31,11 @@ create table if not exists public.contents (
   -- 위 판단의 근거 한 구절 ("캡션에 22시까지 영업"). AI가 틀렸는지 눈으로 확인하는 용도
   time_reason        text not null default '',
   memo               text not null default '',
+  -- 게시물 원문 캡션. AI가 요약한 memo와 달리 **손대지 않은 원본**을 그대로 둔다.
+  -- 화면에는 안 보여주고, 나중에 새 필드(가격대·분위기 등)를 뽑거나 재분석할 때
+  -- 인스타를 다시 긁지 않기 위한 원본 보관용이다. 게시물이 삭제·비공개로 바뀌면
+  -- 두 번 다시 못 구하는 값이라 수집 즉시 저장한다.
+  caption            text not null default '',
   sort_order         double precision not null default extract(epoch from now()),
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
@@ -47,6 +52,9 @@ alter table public.contents
 
 alter table public.contents
   add column if not exists time_reason text not null default '';
+
+alter table public.contents
+  add column if not exists caption text not null default '';
 
 -- updated_at 자동 갱신
 create or replace function public.set_updated_at()

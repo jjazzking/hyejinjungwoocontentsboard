@@ -21,6 +21,9 @@ const EMPTY_FORM = {
   time_slots: [],
   time_reason: '',
   memo: '',
+  // 게시물 원문 캡션. 입력칸은 없고 초안에서 받은 값을 그대로 들고 가 저장만 한다 —
+  // 화면에 긴 원문을 깔면 폼이 읽기 어려워지고, 사람이 고칠 값도 아니다.
+  caption: '',
 }
 
 /** reference_url에서 플랫폼을 자동으로 추측한다 (수동 선택으로 덮어쓸 수 있음). */
@@ -143,6 +146,8 @@ export default function ContentFormModal({
         ...prev,
         title: draft.title || prev.title,
         memo: draft.memo || prev.memo,
+        // 붙여넣은 원문도 함께 보관한다 (이미 있으면 덮지 않는다)
+        caption: prev.caption?.trim() ? prev.caption : (draft.caption ?? ''),
         categories: [...new Set([...prev.categories, ...draft.categories])],
         places: [...(prev.places ?? []), ...(draft.places ?? []).filter((p) => !known.has(p.name))],
       }

@@ -21,6 +21,8 @@ const ROW_FIELDS = [
   'time_slots',
   'time_reason',
   'memo',
+  // 게시물 원문 캡션 — 화면에는 안 쓰고 보관만 한다 (재분석·새 필드 추출의 원본)
+  'caption',
 ]
 
 function toRow(data) {
