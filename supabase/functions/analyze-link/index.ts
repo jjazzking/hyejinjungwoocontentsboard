@@ -1,6 +1,9 @@
 // AI 링크 분석 Edge Function.
 //
-// POST { url?, caption?, categories: string[] }
+// POST { url?, caption?, categories: string[], caption_only?: boolean }
+//  → caption_only가 true면 **수집만 하고 Claude를 부르지 않는다** ({ caption } 만 반환).
+//    이미 만들어 둔 카드에 원문 캡션만 뒤늦게 채워 넣는 백필 경로라서, 이미 채워진
+//    제목·메모를 다시 만들 이유가 없다. AI 호출을 통째로 건너뛰므로 토큰 비용도 0이다.
 //  → 게시물의 캡션·썸네일을 서버에서 수집하고 Claude로 분석해
 //    { title, categories, memo, time_slots, places } 카드 초안을 돌려준다.
 //  → caption이 함께 오면 수집을 건너뛰고 그 텍스트를 바로 분석한다
@@ -58,6 +61,13 @@ function normalizeUrl(raw: string) {
     return raw
   }
 }
+
+/**
+ * 카드에 저장할 캡션 원문의 길이 상한.
+ * 인스타 캡션은 2,200자가 최대지만 유튜브 설명문은 훨씬 길어질 수 있어 DB가 부풀지 않게
+ * 잘라 둔다 (뒤쪽은 대개 해시태그·고정 문구라 잘려도 손실이 적다).
+ */
+const MAX_CAPTION = 5000
 
 interface PostMeta {
   caption: string
@@ -673,7 +683,7 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) return json(500, { error: 'ANTHROPIC_API_KEY secret is not set' })
 
-  let body: { url?: string; caption?: string; categories?: string[] }
+  let body: { url?: string; caption?: string; categories?: string[]; caption_only?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -698,6 +708,7 @@ Deno.serve(async (req) => {
       title: '',
       categories: [],
       memo: '',
+      caption: '',
       places: [],
       place_debug: '',
     })
@@ -705,6 +716,16 @@ Deno.serve(async (req) => {
   // 캡션 없이 썸네일만 건진 경우 — AI가 볼 정보가 거의 없다는 걸 폼에 알려준다
   const captionUsable = isUsefulCaption(meta.caption)
   const captionDetail = captionUsable ? '' : `캡션 수집 실패 — ${meta.via ?? '경로 불명'}`
+  const caption = meta.caption.slice(0, MAX_CAPTION)
+
+  // 백필 경로 — 원문 캡션만 돌려주고 끝낸다. Claude도 장소 검색도 부르지 않는다.
+  // 썸네일만 건지고 캡션이 없으면 저장할 게 없으므로 실패로 알린다 (이유를 화면에 남긴다).
+  if (body.caption_only) {
+    if (!captionUsable) {
+      return json(200, { failed: '캡션을 읽지 못했어요', detail: captionDetail, caption: '' })
+    }
+    return json(200, { caption, detail: '' })
+  }
 
   const client = new Anthropic({ apiKey })
   const userContent: Anthropic.ContentBlockParam[] = [
@@ -738,6 +759,7 @@ Deno.serve(async (req) => {
         failed: 'AI 분석에 실패했어요',
         detail: message.slice(0, 200),
         title: '',
+        caption,
         categories: [],
         memo: '',
         places: [],
@@ -750,6 +772,7 @@ Deno.serve(async (req) => {
       failed: 'AI 분석에 실패했어요',
       detail: '응답이 비어 있어요',
       title: '',
+      caption,
       categories: [],
       memo: '',
       places: [],
@@ -765,6 +788,7 @@ Deno.serve(async (req) => {
         : 'AI가 예상 못 한 형식으로 답했어요',
       detail: responseText.replace(/\s+/g, ' ').slice(0, 200),
       title: '',
+      caption,
       categories: [],
       memo: '',
       places: [],
@@ -857,6 +881,8 @@ Deno.serve(async (req) => {
       ? draft.categories.filter((c: unknown) => typeof c === 'string' && categories.includes(c))
       : [],
     memo: typeof draft.memo === 'string' ? draft.memo.trim() : '',
+    // AI가 요약한 memo와 별개로 원문을 그대로 함께 돌려준다 (카드에 보관용으로 저장된다)
+    caption,
     time_slots: sanitizeTimeSlots(draft.time_slots),
     time_reason: typeof draft.time_reason === 'string' ? draft.time_reason.trim().slice(0, 40) : '',
     places: foundPlaces,

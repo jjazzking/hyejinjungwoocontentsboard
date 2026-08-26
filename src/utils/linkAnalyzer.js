@@ -111,11 +111,11 @@ async function readFunctionError(error) {
 }
 
 /**
- * Edge Function에 AI 분석을 요청한다.
- * 성공하면 초안 객체, 실패하면 `{ failed, detail }`(사유), 설정이 없으면 null.
+ * analyze-link Edge Function을 부른다 (호출·타임아웃·오류 처리만 담당).
+ * 성공하면 응답 본문, 실패하면 `{ failed, detail }`(사유), 설정이 없으면 null.
  * 실패 사유는 그대로 폼까지 올려 보내서 사용자가 로그를 열지 않고도 원인을 알게 한다.
  */
-async function fetchAiDraft(body) {
+async function invokeAnalyzeLink(body) {
   if (!isSupabaseConfigured) return null
   try {
     // Apify 수집 경로까지 가면 1분 이상 걸릴 수 있어 넉넉하게 잡는다
@@ -130,12 +130,35 @@ async function fetchAiDraft(body) {
       return { failed: reason || 'AI 분석 서버를 부르지 못했어요', detail: error.message ?? '' }
     }
     if (!data) return { failed: 'AI 분석 서버가 빈 응답을 보냈어요' }
-    if (data.failed) return data
-    if (!data.title) return { failed: 'AI가 제목을 만들지 못했어요', detail: data.detail ?? '' }
     return data
   } catch (err) {
     return { failed: 'AI 분석 요청 중 오류가 났어요', detail: err?.message ?? '' }
   }
+}
+
+/** 위 호출 결과에 '초안이 쓸 만한가'(제목이 있는가)까지 확인해서 돌려준다. */
+async function fetchAiDraft(body) {
+  const data = await invokeAnalyzeLink(body)
+  if (!data || data.failed) return data
+  if (!data.title) return { failed: 'AI가 제목을 만들지 못했어요', detail: data.detail ?? '' }
+  return data
+}
+
+/**
+ * 게시물의 **원문 캡션만** 수집한다 (AI 분석은 건너뛴다).
+ *
+ * 이미 제목·메모가 채워진 옛 카드에 원본만 뒤늦게 보관하려는 경로다. 원문은 게시물이
+ * 지워지거나 비공개로 바뀌면 두 번 다시 못 구하는 값이라, 지금 받아 둔 걸 저장해 둔다.
+ * Claude를 부르지 않으므로 토큰 비용이 들지 않는다 (느린 쪽은 인스타 수집이다).
+ *
+ * → 성공 `{ caption }` · 실패 `{ failed, detail }` · 설정 없음 null
+ */
+export async function fetchCaptionOnly(url) {
+  const data = await invokeAnalyzeLink({ url, caption_only: true })
+  if (!data || data.failed) return data
+  const caption = typeof data.caption === 'string' ? data.caption.trim() : ''
+  if (!caption) return { failed: '캡션이 비어 있어요', detail: data.detail ?? '' }
+  return { caption }
 }
 
 /**
@@ -154,6 +177,8 @@ export async function analyzeCaption(caption, url, categoryOptions = []) {
     title: ai.title,
     categories: ai.categories ?? [],
     memo: ai.memo ?? '',
+    // 붙여넣은 캡션이 곧 원문이다 (서버가 잘라서 되돌려 준 값을 쓴다)
+    caption: ai.caption ?? '',
     time_slots: ai.time_slots ?? [],
     time_reason: ai.time_reason ?? '',
     places: ai.places ?? [],
@@ -186,6 +211,8 @@ export async function analyzeLink(url, categoryOptions = []) {
       // 캡션을 못 읽고 썸네일만 보고 만든 초안이면 서버가 그 사실을 알려준다
       analysis_note: ai.detail ?? '',
       memo: ai.memo ?? '',
+      // 요약(memo)과 별개로 원문을 그대로 보관한다 — 화면에는 안 쓰고 저장만 한다
+      caption: ai.caption ?? '',
     }
   }
 
@@ -209,6 +236,8 @@ export async function analyzeLink(url, categoryOptions = []) {
     // AI가 실패한 이유를 폼까지 들고 가서 그대로 보여준다 (빈 초안만 열리면 원인을 알 수 없다)
     analysis_note: [ai?.failed, ai?.detail].filter(Boolean).join(' — '),
     memo: author ? `${author} 게시물 보고 저장했어요 ✨` : '',
+    // oEmbed 폴백은 제목·작성자만 주므로 원문 캡션은 없다 (나중에 백필 대상이 된다)
+    caption: '',
   }
 }
 
@@ -230,6 +259,17 @@ export function needsReanalysis(content) {
 }
 
 /**
+ * 원문 캡션이 아직 없는 카드인지 판단한다 (캡션 백필 대상).
+ * needsReanalysis와 달리 **제목·메모가 이미 채워진 카드도 대상**이다 — 채우려는 게
+ * 요약이 아니라 원본이라서, 잘 분석된 카드일수록 원본을 남겨 둘 값어치가 크다.
+ */
+export function needsCaption(content) {
+  const url = content?.reference_url?.trim()
+  if (!url || detectPlatform(url) === 'NONE') return false
+  return !content.caption?.trim()
+}
+
+/**
  * 재분석 결과를 기존 카드에 얹을 패치를 만든다.
  * **사용자가 손댄 값은 절대 덮어쓰지 않는다** — 제목은 대체 제목일 때만 바꾸고,
  * 메모는 비어 있을 때만 채우며, 태그·장소는 기존 것에 더하기만 한다.
@@ -242,6 +282,8 @@ export function mergeReanalysis(content, draft) {
     patch.title = draft.title
   }
   if (draft.memo && !content.memo?.trim()) patch.memo = draft.memo
+  // 원문 캡션은 비어 있을 때만 채운다 (이미 보관한 원본을 덮어쓸 이유가 없다)
+  if (draft.caption && !content.caption?.trim()) patch.caption = draft.caption
 
   const before = content.categories ?? []
   const categories = [...new Set([...before, ...(draft.categories ?? [])])]

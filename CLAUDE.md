@@ -40,10 +40,14 @@ src/
     PlacePicker.jsx           📍 장소 검색·확정 UI
     ClipboardPrompt.jsx       클립보드에서 SNS 링크 감지 배너
     BulkAnalyzeButton.jsx     분석 안 된 카드 일괄 재분석 (한 장씩 · 끊겨도 재개)
+    BulkCaptionButton.jsx     원문 캡션 없는 카드에 원문만 채우기 (다른 필드는 안 건드림)
+    BulkRunStatus.jsx         위 두 일괄 작업의 진행률·결과·실패 사유 표시 (공용)
     BulkTimeButton.jsx        카드들의 '가기 좋은 시간대' 일괄 채우기 (20장씩 묶어 호출)
     ShareToast.jsx            공유로 받은 링크의 저장 결과 알림 (+ 수정하기)
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
   hooks/
+    useBulkRun.js             카드를 한 장씩 오래 걸리는 작업에 태우는 공용 실행기
+                              (Wake Lock · 진행 위치 저장 · 끊겨도 자동 재개)
     useContents.js            카드 CRUD (Supabase ↔ localStorage 이중 모드)
     useCategories.js          커스텀 카테고리 + 태그별 색
     useClipboardSuggestion.js 클립보드 감시
@@ -123,8 +127,16 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 색만 고른 기본 태그(맛집 등)도 이 테이블에 행이 생긴다.
 
 `contents` 행의 주요 필드: `title`, `status`(`PLANNING`|`COMPLETED`), `date`,
-`categories`(text[]), `memo`, `photo_urls`(text[]), `reference_url`,
+`categories`(text[]), `memo`, `caption`, `photo_urls`(text[]), `reference_url`,
 `reference_platform`, `places`(jsonb), `time_slots`(text[]), `time_reason`, `sort_order`.
+
+**`caption`은 게시물 원문이고 `memo`는 그 요약이다 — 둘을 섞지 말 것.** 화면에는 `memo`만
+쓰고 `caption`은 저장만 한다(폼에 입력칸도 없다). 원문을 남기는 이유는 게시물이 지워지거나
+비공개로 바뀌면 두 번 다시 못 구하기 때문이고, 원문이 있으면 나중에 새 필드를 뽑거나 다시
+분석할 때 **인스타를 또 긁지 않아도 된다**(카드당 1분 → 몇 초, Apify 크레딧 0).
+`analyze-link`에 `caption_only: true`로 부르면 수집만 하고 Claude를 건너뛴다 —
+이미 분석된 옛 카드에 원문만 백필하는 경로(`BulkCaptionButton`)가 이걸 쓴다.
+**옛 카드에는 `caption`이 빈 문자열이므로 없는 경우를 처리하는 경로를 지우면 안 된다.**
 
 `places` 원소:
 

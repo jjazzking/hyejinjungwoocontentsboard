@@ -6,6 +6,7 @@ import ContentFormModal from './ContentFormModal.jsx'
 import ClipboardPrompt from './ClipboardPrompt.jsx'
 import BulkAnalyzeButton from './BulkAnalyzeButton.jsx'
 import BulkTimeButton from './BulkTimeButton.jsx'
+import BulkCaptionButton from './BulkCaptionButton.jsx'
 import ShareToast from './ShareToast.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
 import CategoryManager from './CategoryManager.jsx'
@@ -263,6 +264,12 @@ export default function Dashboard({
           />
           {/* 카드들의 '가기 좋은 시간대' 일괄 채우기 */}
           <BulkTimeButton contents={contents} onUpdate={onUpdate} />
+          {/* 원문 캡션이 없는 카드에 게시물 원문만 채워 넣기 (다른 필드는 안 건드린다) */}
+          <BulkCaptionButton
+            contents={contents}
+            onUpdate={onUpdate}
+            onOpenCard={(id) => setDetail({ id })}
+          />
         </div>
       </header>
 
