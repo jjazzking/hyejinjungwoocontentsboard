@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import useBulkRun from '../hooks/useBulkRun.js'
 import { fetchCaptionOnly, needsCaption } from '../utils/linkAnalyzer.js'
@@ -20,7 +20,7 @@ import BulkRunStatus from './BulkRunStatus.jsx'
 // 진행 상황 저장 키 — 재분석과 따로 남겨야 둘이 서로의 진행을 밟지 않는다
 const RUN_KEY = 'couple-contents-board:bulk-caption'
 
-export default function BulkCaptionButton({ contents, onUpdate, onOpenCard }) {
+export default function BulkCaptionButton({ contents, onUpdate, onOpenCard, onBusyChange }) {
   const targets = useMemo(() => contents.filter(needsCaption), [contents])
 
   // 카드 한 장: 원문 캡션만 받아 온다. 다른 필드는 손대지 않는다.
@@ -41,8 +41,13 @@ export default function BulkCaptionButton({ contents, onUpdate, onOpenCard }) {
     enabled: isSupabaseConfigured,
   })
 
+
+  // 패널이 닫혀 있어도 톱니바퀴에 '도는 중' 표시가 뜨도록 위로 알린다
+  useEffect(() => {
+    onBusyChange?.(Boolean(progress))
+  }, [progress, onBusyChange])
+
   if (!isSupabaseConfigured) return null
-  if (targets.length === 0 && !progress && !result) return null
 
   if (progress || result) {
     return (
@@ -61,14 +66,20 @@ export default function BulkCaptionButton({ contents, onUpdate, onOpenCard }) {
     )
   }
 
+  const empty = targets.length === 0
   return (
     <button
       type="button"
       onClick={start}
+      disabled={empty}
       title="게시물 원문(캡션)을 카드에 보관해 둬요. 나중에 다시 분석할 때 인스타를 또 긁지 않아도 돼요"
-      className="mt-3 rounded-full bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
+      className={`mt-2 w-full rounded-full px-3.5 py-1.5 text-xs font-medium shadow-sm ring-1 transition-colors ${
+        empty
+          ? 'cursor-not-allowed bg-neutral-50 text-neutral-400 ring-neutral-900/5'
+          : 'bg-white text-neutral-600 ring-neutral-900/10 hover:bg-neutral-50'
+      }`}
     >
-      📝 원문 없는 카드 {targets.length}개 수집
+      {empty ? '📝 원문 모을 카드 없음' : `📝 원문 없는 카드 ${targets.length}개 수집`}
     </button>
   )
 }

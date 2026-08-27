@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { analyzeTimeSlots } from '../utils/analyzeTimeSlots.js'
 import { needsTimeAnalysis } from '../utils/timeSlots.js'
@@ -18,7 +18,7 @@ import { needsTimeAnalysis } from '../utils/timeSlots.js'
  * - 아직 못 채운 곳이 남은 카드가 있으면 그 카드들만
  * - 전부 채워져 있으면 '전체 다시 분석'으로 바뀐다 (사람이 고친 값도 덮으므로 한 번 확인)
  */
-export default function BulkTimeButton({ contents, onUpdate }) {
+export default function BulkTimeButton({ contents, onUpdate, onBusyChange }) {
   // 진행 상태: null(대기) | { done, total }
   const [progress, setProgress] = useState(null)
   // 끝난 뒤 요약: null | { filled, failed, detail }
@@ -27,8 +27,12 @@ export default function BulkTimeButton({ contents, onUpdate }) {
 
   const pending = useMemo(() => contents.filter(needsTimeAnalysis), [contents])
 
+  // 패널이 닫혀 있어도 톱니바퀴에 '도는 중' 표시가 뜨도록 위로 알린다
+  useEffect(() => {
+    onBusyChange?.(Boolean(progress))
+  }, [progress, onBusyChange])
+
   if (!isSupabaseConfigured) return null
-  if (contents.length === 0 && !progress && !result) return null
 
   const rescan = pending.length === 0
   const targets = rescan ? contents : pending
@@ -88,16 +92,25 @@ export default function BulkTimeButton({ contents, onUpdate }) {
     )
   }
 
+  // 카드가 하나도 없을 때만 비활성 (그 외에는 '전체 다시 분석'이라도 할 수 있다)
+  const empty = targets.length === 0
   return (
     <button
       type="button"
       onClick={start}
+      disabled={empty}
       title="카드의 제목·메모·장소를 보고 장소마다 가기 좋은 시간대를 AI가 채워줘요"
-      className="mt-3 rounded-full bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
+      className={`mt-2 w-full rounded-full px-3.5 py-1.5 text-xs font-medium shadow-sm ring-1 transition-colors ${
+        empty
+          ? 'cursor-not-allowed bg-neutral-50 text-neutral-400 ring-neutral-900/5'
+          : 'bg-white text-neutral-600 ring-neutral-900/10 hover:bg-neutral-50'
+      }`}
     >
-      {rescan
-        ? `🕐 시간대 전체 다시 분석 (${targets.length}개)`
-        : `🕐 시간대 안 채운 카드 ${targets.length}개 분석`}
+      {empty
+        ? '🕐 시간대 분석할 카드 없음'
+        : rescan
+          ? `🕐 시간대 전체 다시 분석 (${targets.length}개)`
+          : `🕐 시간대 안 채운 카드 ${targets.length}개 분석`}
     </button>
   )
 }

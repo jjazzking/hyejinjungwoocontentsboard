@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ContentSummary from './ContentSummary.jsx'
 import ContentSheet from './ContentSheet.jsx'
 import CategoryPicker from './CategoryPicker.jsx'
@@ -7,6 +7,7 @@ import ClipboardPrompt from './ClipboardPrompt.jsx'
 import BulkAnalyzeButton from './BulkAnalyzeButton.jsx'
 import BulkTimeButton from './BulkTimeButton.jsx'
 import BulkCaptionButton from './BulkCaptionButton.jsx'
+import SettingsMenu from './SettingsMenu.jsx'
 import ShareToast from './ShareToast.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
 import CategoryManager from './CategoryManager.jsx'
@@ -56,6 +57,17 @@ export default function Dashboard({
   onMove,
 }) {
   const [activeTab, setActiveTab] = useState('PLANNING')
+  // 일괄 작업이 도는 중인지 (톱니바퀴에 표시를 띄우려고 작업별로 따로 받는다).
+  // 설정 패널을 닫아도 작업은 계속 도는데, 그때 화면에 아무 흔적이 없으면
+  // 탭을 닫을 때 뜨는 경고의 이유를 알 수 없다.
+  const [busyJobs, setBusyJobs] = useState({ analyze: false, time: false, caption: false })
+  const setJobBusy = (key) => (value) =>
+    setBusyJobs((prev) => (prev[key] === value ? prev : { ...prev, [key]: value }))
+  // 자식 effect가 매 렌더마다 다시 돌지 않도록 콜백 신원을 고정한다
+  const onAnalyzeBusy = useCallback(setJobBusy('analyze'), [])
+  const onTimeBusy = useCallback(setJobBusy('time'), [])
+  const onCaptionBusy = useCallback(setJobBusy('caption'), [])
+  const bulkBusy = busyJobs.analyze || busyJobs.time || busyJobs.caption
   // modal: null(닫힘) | { mode: 'add', draft? } | { mode: 'edit', content }
   const [modal, setModal] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -238,8 +250,31 @@ export default function Dashboard({
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
       {/* 헤더 */}
-      <header className="mb-8 text-center">
-        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">
+      <header className="relative mb-8 text-center">
+        {/*
+          일괄 작업 3개는 톱니바퀴 뒤로 접어 둔다 — 가끔 정리할 때만 쓰는 것들이라
+          헤더에 깔아 두면 제목 아래가 버튼 줄로 시끄러워진다.
+          (패널을 닫아도 안의 작업은 계속 돈다 — SettingsMenu 설명 참고)
+        */}
+        <SettingsMenu busy={bulkBusy}>
+          <BulkAnalyzeButton
+            contents={contents}
+            categories={categories}
+            onUpdate={onUpdate}
+            onOpenCard={(id) => setDetail({ id })}
+            onBusyChange={onAnalyzeBusy}
+          />
+          <BulkTimeButton contents={contents} onUpdate={onUpdate} onBusyChange={onTimeBusy} />
+          <BulkCaptionButton
+            contents={contents}
+            onUpdate={onUpdate}
+            onOpenCard={(id) => setDetail({ id })}
+            onBusyChange={onCaptionBusy}
+          />
+        </SettingsMenu>
+
+        {/* px-11: 좁은 화면에서 가운데 정렬된 제목이 오른쪽 위 톱니바퀴 밑으로 들어가지 않게 */}
+        <h1 className="text-balance px-11 text-2xl font-bold tracking-tight text-neutral-900 sm:text-3xl">
           혜진 <span className="text-rose-400">♥</span> 정우 컨텐츠 보드
         </h1>
         <p className="mt-2 text-sm text-neutral-500">우리 둘의 하고 싶은 것, 해낸 것들을 한곳에</p>
@@ -253,24 +288,6 @@ export default function Dashboard({
         >
           📋 복사한 링크로 카드 만들기
         </button>
-
-        {/* 링크만 있고 내용이 안 채워진 카드들 일괄 재분석 (대상이 없으면 안 뜬다) */}
-        <div className="mx-auto max-w-md">
-          <BulkAnalyzeButton
-            contents={contents}
-            categories={categories}
-            onUpdate={onUpdate}
-            onOpenCard={(id) => setDetail({ id })}
-          />
-          {/* 카드들의 '가기 좋은 시간대' 일괄 채우기 */}
-          <BulkTimeButton contents={contents} onUpdate={onUpdate} />
-          {/* 원문 캡션이 없는 카드에 게시물 원문만 채워 넣기 (다른 필드는 안 건드린다) */}
-          <BulkCaptionButton
-            contents={contents}
-            onUpdate={onUpdate}
-            onOpenCard={(id) => setDetail({ id })}
-          />
-        </div>
       </header>
 
       {/* 탭 */}
