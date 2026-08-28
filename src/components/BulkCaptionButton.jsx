@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import useBulkRun from '../hooks/useBulkRun.js'
 import { fetchCaptionOnly, needsCaption } from '../utils/linkAnalyzer.js'
@@ -20,7 +20,7 @@ import BulkRunStatus from './BulkRunStatus.jsx'
 // 진행 상황 저장 키 — 재분석과 따로 남겨야 둘이 서로의 진행을 밟지 않는다
 const RUN_KEY = 'couple-contents-board:bulk-caption'
 
-export default function BulkCaptionButton({ contents, onUpdate, onOpenCard }) {
+export default function BulkCaptionButton({ contents, onUpdate, onOpenCard, onBusyChange }) {
   const targets = useMemo(() => contents.filter(needsCaption), [contents])
 
   // 카드 한 장: 원문 캡션만 받아 온다. 다른 필드는 손대지 않는다.
@@ -40,6 +40,12 @@ export default function BulkCaptionButton({ contents, onUpdate, onOpenCard }) {
     onUpdate,
     enabled: isSupabaseConfigured,
   })
+
+  // 설정 서랍이 이 작업 때문에 열려 있어야 하는지 부모에게 알린다
+  // (도는 중에 서랍이 접히면 진행률이 안 보여서 끊긴 줄 알게 된다)
+  useEffect(() => {
+    onBusyChange?.(Boolean(progress || result))
+  }, [progress, result, onBusyChange])
 
   if (!isSupabaseConfigured) return null
   if (targets.length === 0 && !progress && !result) return null

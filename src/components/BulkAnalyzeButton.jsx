@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import useBulkRun from '../hooks/useBulkRun.js'
 import { analyzeLink, mergeReanalysis, needsReanalysis } from '../utils/linkAnalyzer.js'
@@ -18,7 +18,7 @@ import BulkRunStatus from './BulkRunStatus.jsx'
 // 진행 상황 저장 키 — 브라우저(사람)마다 따로 남는다
 const RUN_KEY = 'couple-contents-board:bulk-analyze'
 
-export default function BulkAnalyzeButton({ contents, categories, onUpdate, onOpenCard }) {
+export default function BulkAnalyzeButton({ contents, categories, onUpdate, onOpenCard, onBusyChange }) {
   const targets = useMemo(() => contents.filter(needsReanalysis), [contents])
 
   // 카드 한 장: 링크를 다시 분석해서, 사용자가 손댄 값은 남기고 빈 칸만 채우는 패치를 만든다
@@ -37,6 +37,12 @@ export default function BulkAnalyzeButton({ contents, categories, onUpdate, onOp
     onUpdate,
     enabled: isSupabaseConfigured,
   })
+
+  // 설정 서랍이 이 작업 때문에 열려 있어야 하는지 부모에게 알린다
+  // (도는 중에 서랍이 접히면 진행률이 안 보여서 끊긴 줄 알게 된다)
+  useEffect(() => {
+    onBusyChange?.(Boolean(progress || result))
+  }, [progress, result, onBusyChange])
 
   if (!isSupabaseConfigured) return null
   if (targets.length === 0 && !progress && !result) return null
