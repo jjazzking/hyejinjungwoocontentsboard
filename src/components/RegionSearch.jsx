@@ -5,9 +5,11 @@ import { searchRegions, isAiRegionSearchAvailable } from '../utils/regionSearch.
 /**
  * 지역(동네) 검색 한 줄 — 지도 바로 위.
  *
- * "비 오는 날 조용히 걷기 좋은 데"처럼 **추상적으로** 던지면, 저장해 둔 카드가 있는
- * 동네 중에서 어울리는 곳을 관련도 순으로 보여준다. 결과를 누르면 그 동네로 목록·지도가
- * 걸러진다 (검색이 곧 필터다 — 태그 칩과 같은 자리에서 같은 일을 한다).
+ * '충무로'처럼 **동네 이름**으로 찾거나, "비 오는 날 조용히 걷기 좋은 데"처럼
+ * **분위기**로 던지면, 저장해 둔 카드가 있는 동네 중에서 어울리는 곳을 관련도 순으로
+ * 보여준다. 지명으로 찾으면 그 동네가 없어도 **가까운 동네**가 위로 올라온다.
+ * 결과를 누르면 그 동네로 목록·지도가 걸러진다
+ * (검색이 곧 필터다 — 태그 칩과 같은 자리에서 같은 일을 한다).
  *
  * 후보는 **보드에 있는 동네뿐**이다. 안 가 본 새 동네를 발굴해 주지는 않는다.
  * 동 단위가 기본이고, 주소에 동이 없으면 구·시·군 단위로 묶인다 (utils/regions.js).
@@ -17,8 +19,11 @@ import { searchRegions, isAiRegionSearchAvailable } from '../utils/regionSearch.
  * - onSelect : 동네를 고르거나(null이면 해제) 할 때 Dashboard에 알린다
  */
 
-/** 처음 열었을 때 뭘 검색하면 되는지 알려주는 예시 (누르면 그대로 검색된다) */
-const EXAMPLES = ['조용히 걷기 좋은 동네', '저녁 먹고 술 한잔', '비 오는 날 실내 데이트']
+/**
+ * 처음 열었을 때 뭘 검색하면 되는지 알려주는 예시 (누르면 그대로 검색된다).
+ * 지명 검색('충무로')이 제일 흔하므로 맨 앞에 둔다.
+ */
+const EXAMPLES = ['충무로', '조용히 걷기 좋은 동네', '저녁 먹고 술 한잔']
 
 export default function RegionSearch({ items, selected, onSelect }) {
   const [query, setQuery] = useState('')
@@ -72,7 +77,7 @@ export default function RegionSearch({ items, selected, onSelect }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setOpen(true)}
-            placeholder="어디 갈까? — 분위기로 동네 찾기"
+            placeholder="어디 갈까? — 동네 이름이나 분위기로"
             aria-label="가고 싶은 동네 검색"
             className="w-full rounded-full bg-white py-2.5 pl-9 pr-3 text-sm text-neutral-700 shadow-sm ring-1 ring-neutral-900/10 outline-none transition-shadow placeholder:text-neutral-400 focus:ring-2 focus:ring-rose-300"
           />
@@ -182,6 +187,12 @@ function RegionResults({ result, selected, onSelect }) {
                       <span className="truncate text-sm font-medium text-neutral-800">
                         {region.label}
                       </span>
+                      {/* 구로 묶인 동네는 이름만으론 어딘지 모른다 — 대표 도로명을 붙여 준다 */}
+                      {region.hint && (
+                        <span className="shrink-0 text-[11px] text-neutral-500">
+                          {region.hint} 일대
+                        </span>
+                      )}
                       <span className="shrink-0 text-[11px] text-neutral-400">
                         카드 {region.contents.length}개
                       </span>

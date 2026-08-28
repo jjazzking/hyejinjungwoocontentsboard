@@ -24,7 +24,12 @@ const MAX_CARDS_PER_REGION = 8
 /** 로컬 매칭에서 돌려줄 최대 동네 수 */
 const MAX_LOCAL_RESULTS = 8
 
-/** 동네 하나를 서버에 보낼 형태로 추린다 (사진 URL·링크는 판단에 필요 없어 빼놓는다) */
+/**
+ * 동네 하나를 서버에 보낼 형태로 추린다 (사진 URL·링크는 판단에 필요 없어 빼놓는다).
+ * 주소를 같이 보내는 이유: '충무로'·'을지로'처럼 **사람들이 부르는 이름이 도로명에만
+ * 남아 있는** 곳이 있다. 도로명주소를 동네로 묶지는 않지만(도로 수가 너무 많다),
+ * AI가 지명 검색을 맞히려면 그 문자열이 눈에 보여야 한다.
+ */
 function toPayload(region) {
   return {
     label: region.label,
@@ -34,6 +39,7 @@ function toPayload(region) {
       categories: content.categories ?? [],
       memo: content.memo ?? '',
       places: (content.places ?? []).map((p) => p.name ?? '').filter(Boolean),
+      address: (content.places ?? []).map((p) => p.address ?? '').find(Boolean) ?? '',
     })),
   }
 }
@@ -41,15 +47,26 @@ function toPayload(region) {
 /**
  * 검색어를 2글자 이상 토막으로 자른다.
  * 조사가 붙은 채로 들어오는 게 보통이라('성수동에서') 완전 일치 대신 부분 일치를 쓴다.
+ * '충무로역'·'성수 근처'처럼 지명 뒤에 붙는 말은 떼어 낸다 —
+ * 주소에는 '충무로'로만 적혀 있어서 그대로 두면 아무 데도 안 걸린다.
  */
+const NAME_TAILS = /(역|근처|주변|부근|쪽|일대|에서|으로|까지)$/
+
 function tokenize(query) {
-  return [...new Set(query.toLowerCase().split(/[\s,·/]+/).filter((t) => t.length >= 2))]
+  const tokens = new Set()
+  for (const raw of query.toLowerCase().split(/[\s,·/]+/)) {
+    if (raw.length >= 2) tokens.add(raw)
+    const trimmed = raw.replace(NAME_TAILS, '')
+    if (trimmed.length >= 2) tokens.add(trimmed)
+  }
+  return [...tokens]
 }
 
 /** 카드 한 장에서 매칭에 쓸 문자열을 모은다 (캡션 원문은 너무 길어 제외) */
 function cardText(content) {
+  // 주소도 넣는다 — '충무로'처럼 동네 이름이 도로명에만 남아 있는 곳을 잡기 위해서
   const places = (content.places ?? [])
-    .map((p) => `${p.name ?? ''} ${p.category ?? ''}`)
+    .map((p) => `${p.name ?? ''} ${p.category ?? ''} ${p.address ?? ''}`)
     .join(' ')
   const slots = cardTimeSlots(content)
     .map((key) => TIME_SLOTS.find((slot) => slot.key === key)?.label ?? '')
@@ -68,11 +85,15 @@ function searchLocally(query, regions) {
   const scored = []
   for (const region of regions) {
     const name = `${region.fullLabel} ${region.label}`.toLowerCase()
+    // 이 동네에 있는 장소들의 주소를 한 덩어리로 — '충무로'처럼 동네 이름이 도로명에만
+    // 남아 있는 경우를 잡는다. 이름만큼은 아니어도 꽤 강한 지명 신호다
+    const addresses = region.places.map((p) => p.address ?? '').join(' ').toLowerCase()
     let score = 0
     let hitCards = 0
     for (const token of tokens) {
       // 동네 이름이 걸리면 가장 강한 신호다 ('성수' → 성수동)
       if (name.includes(token)) score += 60
+      else if (addresses.includes(token)) score += 35
     }
     for (const content of region.contents) {
       const text = cardText(content)
