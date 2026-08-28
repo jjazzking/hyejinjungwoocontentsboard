@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { analyzeTimeSlots } from '../utils/analyzeTimeSlots.js'
 import { needsTimeAnalysis } from '../utils/timeSlots.js'
@@ -18,7 +18,7 @@ import { needsTimeAnalysis } from '../utils/timeSlots.js'
  * - 아직 못 채운 곳이 남은 카드가 있으면 그 카드들만
  * - 전부 채워져 있으면 '전체 다시 분석'으로 바뀐다 (사람이 고친 값도 덮으므로 한 번 확인)
  */
-export default function BulkTimeButton({ contents, onUpdate }) {
+export default function BulkTimeButton({ contents, onUpdate, onBusyChange }) {
   // 진행 상태: null(대기) | { done, total }
   const [progress, setProgress] = useState(null)
   // 끝난 뒤 요약: null | { filled, failed, detail }
@@ -26,6 +26,11 @@ export default function BulkTimeButton({ contents, onUpdate }) {
   const runningRef = useRef(false)
 
   const pending = useMemo(() => contents.filter(needsTimeAnalysis), [contents])
+
+  // 설정 서랍이 이 작업 때문에 열려 있어야 하는지 부모에게 알린다
+  useEffect(() => {
+    onBusyChange?.(Boolean(progress || result))
+  }, [progress, result, onBusyChange])
 
   if (!isSupabaseConfigured) return null
   if (contents.length === 0 && !progress && !result) return null

@@ -8,6 +8,7 @@ import BulkAnalyzeButton from './BulkAnalyzeButton.jsx'
 import BulkTimeButton from './BulkTimeButton.jsx'
 import BulkCaptionButton from './BulkCaptionButton.jsx'
 import ShareToast from './ShareToast.jsx'
+import SettingsMenu from './SettingsMenu.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
 import RegionSearch from './RegionSearch.jsx'
 import CategoryManager from './CategoryManager.jsx'
@@ -73,6 +74,14 @@ export default function Dashboard({
   const [detail, setDetail] = useState(null)
   // 기존 카드를 이 태그에 넣는 창: null | 태그 이름
   const [picker, setPicker] = useState(null)
+  // 일괄 작업이 도는 중인지 (⚙️ 서랍을 열어 둬야 진행률이 보인다)
+  const [bulkBusy, setBulkBusyState] = useState({ analyze: false, time: false, caption: false })
+  // 자식에 넘길 콜백은 정체성을 고정해 둔다 — 매 렌더 새로 만들면 자식의 useEffect가 계속 돈다
+  const setBulkBusy = useMemo(() => {
+    const make = (key) => (active) =>
+      setBulkBusyState((prev) => (prev[key] === active ? prev : { ...prev, [key]: active }))
+    return { analyze: make('analyze'), time: make('time'), caption: make('caption') }
+  }, [])
 
   const { suggestion, resolveSuggestion, checkClipboard, notice } = useClipboardSuggestion(contents)
   const { categories, categoryColors, addCategory, setCategoryColor, removeCategory } =
@@ -256,33 +265,37 @@ export default function Dashboard({
         </h1>
         <p className="mt-2 text-sm text-neutral-500">우리 둘의 하고 싶은 것, 해낸 것들을 한곳에</p>
 
-        {/* 복사해 둔 SNS 링크 확인 — 브라우저 붙여넣기 팝업은 이 버튼을 눌렀을 때만 뜬다 */}
-        <button
-          type="button"
-          onClick={checkClipboard}
-          title="복사해 둔 인스타/유튜브/틱톡 링크로 카드 만들기"
-          className="mt-3 rounded-full bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
-        >
-          📋 복사한 링크로 카드 만들기
-        </button>
+        {/* 가끔 쓰는 작업은 ⚙️ 서랍에 접어 둔다 — 넷을 다 펼쳐 두면 보드를 열 때마다
+            카드보다 버튼이 먼저 보였다. 상단에 액션을 새로 추가할 땐 이 안에 넣을 것 */}
+        <SettingsMenu busy={Object.values(bulkBusy).some(Boolean)}>
+          {/* 복사해 둔 SNS 링크 확인 — 브라우저 붙여넣기 팝업은 이 버튼을 눌렀을 때만 뜬다 */}
+          <button
+            type="button"
+            onClick={checkClipboard}
+            title="복사해 둔 인스타/유튜브/틱톡 링크로 카드 만들기"
+            className="mt-3 w-full rounded-full bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-600 shadow-sm ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50"
+          >
+            📋 복사한 링크로 카드 만들기
+          </button>
 
-        {/* 링크만 있고 내용이 안 채워진 카드들 일괄 재분석 (대상이 없으면 안 뜬다) */}
-        <div className="mx-auto max-w-md">
+          {/* 링크만 있고 내용이 안 채워진 카드들 일괄 재분석 (대상이 없으면 안 뜬다) */}
           <BulkAnalyzeButton
             contents={contents}
             categories={categories}
             onUpdate={onUpdate}
             onOpenCard={(id) => setDetail({ id })}
+            onBusyChange={setBulkBusy.analyze}
           />
           {/* 카드들의 '가기 좋은 시간대' 일괄 채우기 */}
-          <BulkTimeButton contents={contents} onUpdate={onUpdate} />
+          <BulkTimeButton contents={contents} onUpdate={onUpdate} onBusyChange={setBulkBusy.time} />
           {/* 원문 캡션이 없는 카드에 게시물 원문만 채워 넣기 (다른 필드는 안 건드린다) */}
           <BulkCaptionButton
             contents={contents}
             onUpdate={onUpdate}
             onOpenCard={(id) => setDetail({ id })}
+            onBusyChange={setBulkBusy.caption}
           />
-        </div>
+        </SettingsMenu>
       </header>
 
       {/* 탭 */}
