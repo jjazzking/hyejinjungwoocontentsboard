@@ -29,10 +29,10 @@ function json(status: number, body: unknown) {
 
 /** 한 번에 판단할 최대 동네 수 (프롬프트가 너무 길어지지 않는 선) */
 const MAX_REGIONS = 40
-/** 동네 하나를 설명할 때 보여줄 최대 카드 수 — 많아도 분위기는 이 정도면 드러난다 */
-const MAX_CARDS_PER_REGION = 8
-/** 카드 한 장에서 보여줄 최대 장소 수 */
-const MAX_PLACES = 4
+/** 동네 하나에서 보여줄 최대 장소 이름 수 */
+const MAX_PLACES = 8
+/** 동네 하나에서 보여줄 최대 카드 제목 수 — 많아도 분위기는 이 정도면 드러난다 */
+const MAX_TITLES = 8
 /** 돌려줄 최대 동네 수 */
 const MAX_RESULTS = 8
 
@@ -53,47 +53,36 @@ function parseResultJson(text: string) {
   return JSON.parse(stripped.slice(start, end + 1))
 }
 
-interface CardInput {
-  title?: unknown
-  categories?: unknown
-  memo?: unknown
-  places?: unknown
-  address?: unknown
-}
-
 interface RegionInput {
   label?: unknown
   area?: unknown
-  cards?: unknown
+  count?: unknown
+  tags?: unknown
+  places?: unknown
+  titles?: unknown
 }
 
-/** 동네 하나를 AI에게 보여줄 몇 줄로 압축한다 (토큰을 아끼려고 빈 항목은 뺀다). */
+/**
+ * 동네 하나를 AI에게 보여줄 **한 덩어리**로 압축한다.
+ *
+ * 카드를 한 장씩 늘어놓으면 동네 40곳에서 입력이 3만 자를 넘는다. 동네를 고르는 데
+ * 실제로 쓰이는 건 가게 이름·태그·제목이라 그것만 뭉쳐 보낸다 (프론트가 이미 뭉쳐서 준다).
+ */
 function describeRegion(region: RegionInput, no: number) {
   const label = textOf(region.label, 30) || '(이름 없음)'
-  const area = textOf(region.area, 40)
-  const cards = Array.isArray(region.cards) ? region.cards.slice(0, MAX_CARDS_PER_REGION) : []
-  const lines = [`[${no}] ${label}${area && area !== label ? ` (${area})` : ''} · 카드 ${cards.length}개`]
+  const area = textOf(region.area, 60)
+  const count = Number(region.count)
+  const parts = [`[${no}] ${label}${area && area !== label ? ` (${area})` : ''}`]
+  if (Number.isFinite(count) && count > 0) parts.push(`카드 ${count}개`)
 
-  for (const entry of cards) {
-    const card = entry as CardInput
-    const title = textOf(card.title, 80)
-    const categories = listOf(card.categories, 5)
-    const places = listOf(card.places, MAX_PLACES)
-    const memo = textOf(card.memo, 120)
-    // 주소를 같이 보여준다 — '충무로'처럼 사람들이 부르는 이름이 도로명에만 남아 있는
-    // 동네가 있어서, 지명으로 검색했을 때 이 문자열이 유일한 단서인 경우가 많다
-    const address = textOf(card.address, 60)
-    const detail = [
-      categories.length > 0 ? `태그: ${categories.join(',')}` : '',
-      places.length > 0 ? `장소: ${places.join(', ')}` : '',
-      address ? `주소: ${address}` : '',
-      memo,
-    ]
-      .filter(Boolean)
-      .join(' · ')
-    lines.push(`    - ${title || '(제목 없음)'}${detail ? ` — ${detail}` : ''}`)
-  }
-  return lines.join('\n')
+  const tags = listOf(region.tags, 5)
+  if (tags.length > 0) parts.push(`태그: ${tags.join(',')}`)
+  const places = listOf(region.places, MAX_PLACES)
+  if (places.length > 0) parts.push(`장소: ${places.join(', ')}`)
+  const titles = listOf(region.titles, MAX_TITLES).map((t) => t.slice(0, 30))
+  if (titles.length > 0) parts.push(`제목: ${titles.join(' / ')}`)
+
+  return parts.join(' · ')
 }
 
 const SYSTEM_PROMPT = `당신은 커플의 데이트 보드에서 "어느 동네에 갈지" 골라 주는 도우미입니다.
@@ -108,16 +97,16 @@ const SYSTEM_PROMPT = `당신은 커플의 데이트 보드에서 "어느 동네
 - score: 검색어와 얼마나 맞는지 0~100. 아래를 종합해서 매기세요.
   · **지명으로 검색한 경우**(충무로, 성수, 홍대, 을지로, 서울숲, 강남역 …) — 가장 흔한
     검색입니다. 아래 순서로 점수를 주세요.
-      90~100 그 지명 자체인 동네. 동네 이름·주소에 그 말이 그대로 들어 있는 곳
-             ('충무로' → 주소가 "중구 충무로 52"인 카드가 있는 동네)
+      90~100 그 지명 자체인 동네. 동네 이름이나 괄호 안 지역 설명에 그 말이 들어 있는 곳
+             ('충무로' → "중구 (서울 중구 · 충무로 일대)")
       60~85  같은 구 안이거나 걸어서·한두 정거장으로 갈 만한 이웃 동네
              (충무로 → 을지로·명동·필동·종로 / 성수 → 왕십리·서울숲·건대)
       40~55  같은 생활권이라고 볼 만한 정도
     ★ 행정동 이름과 부르는 이름이 다른 곳이 많습니다. 충무로·을지로·종로·홍대·서울숲은
-      역·거리 이름이고, 실제 주소는 다른 동으로 적혀 있을 수 있어요. 주소 문자열까지
-      보고 판단하세요.
+      역·거리 이름이라 동네 이름이 다르게 적혀 있을 수 있어요. 괄호 안의 '○○ 일대'(대표
+      도로명)와 장소 이름까지 보고 판단하세요.
   · 검색어가 분위기·활동이면(조용한 산책, 비 오는 날, 술 한잔, 야경) 그 동네 카드들의
-    제목·태그·장소·메모가 그 분위기와 맞는지를 봅니다.
+    제목·태그·장소 이름이 그 분위기와 맞는지를 봅니다.
   · 카드가 많다고 무조건 높이지 마세요. 한 장이라도 딱 맞으면 높은 점수가 맞습니다.
 - 40점 미만인 동네는 결과에서 빼세요. 맞는 동네가 하나도 없으면 results 는 빈 배열([])입니다.
   억지로 채우지 마세요.
@@ -162,9 +151,20 @@ Deno.serve(async (req) => {
       messages: [
         {
           role: 'user',
-          content: `검색어: ${query}\n\n동네 목록:\n${regions
-            .map((region, i) => describeRegion(region as RegionInput, i + 1))
-            .join('\n\n')}`,
+          content: [
+            // 동네 목록은 검색할 때마다 똑같다 — 앞에 두고 캐시를 걸어 둔다.
+            // 캐시는 **앞에서부터 같은 만큼**만 맞으므로 매번 바뀌는 검색어를 앞에 두면
+            // 캐시가 전혀 안 걸린다. 그래서 목록 먼저, 검색어는 맨 뒤다.
+            // (연달아 검색할 때 두 번째부터 입력 비용이 1/10로 떨어진다)
+            {
+              type: 'text',
+              text: `동네 목록:\n${regions
+                .map((region, i) => describeRegion(region as RegionInput, i + 1))
+                .join('\n')}`,
+              cache_control: { type: 'ephemeral' },
+            },
+            { type: 'text', text: `검색어: ${query}` },
+          ],
         },
       ],
     })

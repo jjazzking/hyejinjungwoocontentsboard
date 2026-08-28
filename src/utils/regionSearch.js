@@ -25,22 +25,32 @@ const MAX_CARDS_PER_REGION = 8
 const MAX_LOCAL_RESULTS = 8
 
 /**
- * 동네 하나를 서버에 보낼 형태로 추린다 (사진 URL·링크는 판단에 필요 없어 빼놓는다).
- * 주소를 같이 보내는 이유: '충무로'·'을지로'처럼 **사람들이 부르는 이름이 도로명에만
- * 남아 있는** 곳이 있다. 도로명주소를 동네로 묶지는 않지만(도로 수가 너무 많다),
- * AI가 지명 검색을 맞히려면 그 문자열이 눈에 보여야 한다.
+ * 동네 하나를 서버에 보낼 형태로 추린다.
+ *
+ * ★ 카드를 한 장씩 늘어놓지 않고 **동네 단위로 뭉쳐서** 보낸다. 예전엔 카드마다
+ *   제목·태그·장소·주소·메모를 다 실어 보냈는데, 동네 40곳이면 입력이 3만 자를 넘어
+ *   검색 한 번에 토큰이 수만 개씩 나갔다. AI가 동네를 고르는 데 실제로 쓰는 건
+ *   **가게 이름·태그·제목**이고 메모는 그 요약이라 거의 중복이었다.
+ *
+ * 주소는 통째로 보내지 않고 `hint`(그 동네의 대표 도로명)만 area에 얹는다 —
+ * '충무로'처럼 부르는 이름이 도로명에만 남아 있는 곳을 맞히려면 그건 있어야 한다.
  */
 function toPayload(region) {
+  const cards = region.contents.slice(0, MAX_CARDS_PER_REGION)
+  const tags = new Set()
+  const places = new Set()
+  for (const content of cards) {
+    for (const category of content.categories ?? []) tags.add(category)
+    for (const place of content.places ?? []) if (place?.name) places.add(place.name)
+  }
   return {
     label: region.label,
-    area: region.fullLabel,
-    cards: region.contents.slice(0, MAX_CARDS_PER_REGION).map((content) => ({
-      title: content.title ?? '',
-      categories: content.categories ?? [],
-      memo: content.memo ?? '',
-      places: (content.places ?? []).map((p) => p.name ?? '').filter(Boolean),
-      address: (content.places ?? []).map((p) => p.address ?? '').find(Boolean) ?? '',
-    })),
+    // '중구 · 충무로 일대'처럼 대표 도로명까지 (지명 검색의 유일한 단서인 경우가 있다)
+    area: [region.fullLabel, region.hint && `${region.hint} 일대`].filter(Boolean).join(' · '),
+    count: region.contents.length,
+    tags: [...tags].slice(0, 5),
+    places: [...places].slice(0, 8),
+    titles: cards.map((content) => (content.title ?? '').slice(0, 30)).filter(Boolean),
   }
 }
 
@@ -129,6 +139,17 @@ function sortByScoreThenDistance(rows) {
 }
 
 /**
+ * 같은 검색을 두 번 하면 호출하지 않도록 세션 동안만 결과를 들고 있는다.
+ * (같은 말을 다시 눌러 보는 일이 잦은데 그때마다 토큰을 쓸 이유가 없다.)
+ * 카드가 바뀌면 후보 동네도 달라지므로 서명에 동네·카드 수를 함께 넣는다.
+ */
+const cache = new Map()
+
+function cacheKey(query, regions) {
+  return `${query}\u0000${regions.map((r) => `${r.key}:${r.contents.length}`).join('|')}`
+}
+
+/**
  * 동네를 검색한다.
  * → { results: [{ region, score, reason }], mode: 'AI' | 'LOCAL', detail?: string }
  *   detail 은 AI를 못 쓴 이유다 — 화면에 그대로 보여준다 (실패를 조용히 삼키지 않는다).
@@ -145,6 +166,11 @@ export async function searchRegions(query, regions) {
 
   // 카드가 많은 동네 순으로 이미 정렬돼 있다 — 너무 많으면 앞쪽만 보낸다
   const candidates = regions.slice(0, MAX_REGIONS)
+
+  const key = cacheKey(trimmed, candidates)
+  const cached = cache.get(key)
+  if (cached) return cached
+
   try {
     const timeout = new Promise((resolve) =>
       setTimeout(() => resolve({ error: { message: '시간이 너무 오래 걸려요' } }), TIMEOUT_MS),
@@ -177,7 +203,9 @@ export async function searchRegions(query, regions) {
       })
     }
     // AI가 하나도 못 고른 건 "맞는 동네가 없다"는 뜻이라 그대로 빈 결과를 보여준다
-    return { results: sortByScoreThenDistance(results), mode: 'AI' }
+    const found = { results: sortByScoreThenDistance(results), mode: 'AI' }
+    cache.set(key, found)
+    return found
   } catch (err) {
     return fallback(`오류: ${err?.message ?? err} — 이름·태그로만 찾았어요`)
   }
