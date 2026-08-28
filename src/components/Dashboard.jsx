@@ -9,6 +9,7 @@ import BulkTimeButton from './BulkTimeButton.jsx'
 import BulkCaptionButton from './BulkCaptionButton.jsx'
 import ShareToast from './ShareToast.jsx'
 import CategoryFilter from './CategoryFilter.jsx'
+import RegionSearch from './RegionSearch.jsx'
 import CategoryManager from './CategoryManager.jsx'
 import CompletedCalendar from './CompletedCalendar.jsx'
 import MapErrorBoundary from './MapErrorBoundary.jsx'
@@ -19,6 +20,7 @@ import { useSharedLink } from '../hooks/useSharedLink.js'
 import { useCategories } from '../hooks/useCategories.js'
 import { analyzeLink, normalizeSnsUrl } from '../utils/linkAnalyzer.js'
 import { buildCategoryColorMap, contentColor } from '../utils/categoryColors.js'
+import { contentRegionKeys } from '../utils/regions.js'
 
 const TABS = [
   { key: 'PLANNING', label: '할 것들', emoji: '🗓️' },
@@ -64,6 +66,8 @@ export default function Dashboard({
   // 탭별 보기 필터: 할 것들은 태그, 한 것들은 날짜('YYYY-MM-DD')
   const [categoryFilter, setCategoryFilter] = useState(null)
   const [dateFilter, setDateFilter] = useState(null)
+  // 지역 검색으로 고른 동네: null | { key, label, fullLabel, … } (utils/regions.js)
+  const [regionFilter, setRegionFilter] = useState(null)
   // 풀 카드 시트: null | { id, place?, color? } — 내용은 contents에서 매번 찾는다
   // (스냅샷을 들고 있으면 수정 직후 옛 내용이 남는다)
   const [detail, setDetail] = useState(null)
@@ -97,20 +101,28 @@ export default function Dashboard({
   const activeCategory = categoryFilter && categories.includes(categoryFilter) ? categoryFilter : null
 
   const filtered = useMemo(() => {
-    if (activeTab === 'PLANNING') {
-      return activeCategory
-        ? tabItems.filter((c) => (c.categories ?? []).includes(activeCategory))
-        : tabItems
-    }
-    return dateFilter ? tabItems.filter((c) => c.date === dateFilter) : tabItems
-  }, [activeTab, tabItems, activeCategory, dateFilter])
+    const byTab =
+      activeTab === 'PLANNING'
+        ? activeCategory
+          ? tabItems.filter((c) => (c.categories ?? []).includes(activeCategory))
+          : tabItems
+        : dateFilter
+          ? tabItems.filter((c) => c.date === dateFilter)
+          : tabItems
+    // 지역 검색은 태그·날짜 위에 겹쳐 걸린다. 카드의 동네는 저장할 때마다 달라질 수 있어
+    // 고른 시점의 목록을 들고 있지 않고 매번 주소에서 다시 계산한다
+    if (!regionFilter) return byTab
+    return byTab.filter((c) => contentRegionKeys(c).has(regionFilter.key))
+  }, [activeTab, tabItems, activeCategory, dateFilter, regionFilter])
 
   const resetFilters = () => {
     setCategoryFilter(null)
     setDateFilter(null)
+    setRegionFilter(null)
   }
 
-  const hasFilter = activeTab === 'PLANNING' ? Boolean(activeCategory) : Boolean(dateFilter)
+  const hasFilter =
+    Boolean(regionFilter) || (activeTab === 'PLANNING' ? Boolean(activeCategory) : Boolean(dateFilter))
 
   // ESC로 이동 모드 취소
   useEffect(() => {
@@ -352,6 +364,11 @@ export default function Dashboard({
         </p>
       )}
 
+      {/* 지역 검색: 지도 바로 위 한 줄. 고른 동네는 목록·지도에 그대로 필터로 걸린다 */}
+      {!loading && activeTab !== 'CATEGORIES' && (
+        <RegionSearch items={tabItems} selected={regionFilter} onSelect={setRegionFilter} />
+      )}
+
       {/* 지도: 목록 위에 항상 떠 있고, 위의 필터가 핀에도 그대로 적용된다.
           외부 지도 스크립트가 터져도 보드는 살아 있어야 하므로 울타리를 두른다 */}
       {!loading && activeTab !== 'CATEGORIES' && (
@@ -378,9 +395,11 @@ export default function Dashboard({
       {/* 필터가 걸려 있을 때 지금 무엇을 보고 있는지 알려주는 한 줄 */}
       {!loading && activeTab !== 'CATEGORIES' && hasFilter && filtered.length > 0 && (
         <p className="mb-4 text-center text-sm text-neutral-500">
-          {activeTab === 'PLANNING'
-            ? `🏷️ '${activeCategory}' 태그 ${filtered.length}개`
-            : `📅 ${formatDay(dateFilter)}에 한 것 ${filtered.length}개`}
+          {regionFilter
+            ? `🧭 ${regionFilter.fullLabel} ${filtered.length}개`
+            : activeTab === 'PLANNING'
+              ? `🏷️ '${activeCategory}' 태그 ${filtered.length}개`
+              : `📅 ${formatDay(dateFilter)}에 한 것 ${filtered.length}개`}
         </p>
       )}
 
@@ -394,9 +413,11 @@ export default function Dashboard({
         <div className="flex flex-col items-center gap-3 py-16 text-center">
           <span className="text-4xl">🔍</span>
           <p className="text-sm text-neutral-500">
-            {activeTab === 'PLANNING'
-              ? `'${activeCategory}' 태그가 붙은 카드가 없어요.`
-              : `${formatDay(dateFilter)}에 기록한 카드가 없어요.`}
+            {regionFilter
+              ? `${regionFilter.fullLabel}에 해당하는 카드가 없어요.`
+              : activeTab === 'PLANNING'
+                ? `'${activeCategory}' 태그가 붙은 카드가 없어요.`
+                : `${formatDay(dateFilter)}에 기록한 카드가 없어요.`}
           </p>
           {/* 태그를 갓 만든 직후가 바로 이 화면이다 — 여기서 첫 카드를 넣을 수 있어야 한다 */}
           <div className="flex flex-wrap justify-center gap-2">
