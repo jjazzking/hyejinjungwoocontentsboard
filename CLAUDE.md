@@ -27,6 +27,7 @@ src/
     CategoryPicker.jsx        '이 태그에 넣을 카드 고르기' 창 (기존 카드 토글)
     ContentFormModal.jsx      카드 추가·수정 폼 (AI 자동 채움 진입점)
     CategoryFilter.jsx        '할 일' 탭의 태그 칩 — 거르기 전용 (칩에 태그 색 점)
+    RegionSearch.jsx          🧭 지역 검색 한 줄 (지도 위) — 고른 동네가 곧 필터
     CategoryManager.jsx       '태그 관리' 탭 — 태그 만들기 · 태그별 색 고르기 · 안 쓰는 태그 지우기
     CompletedCalendar.jsx     '한 일' 탭의 달력 (컨텐츠 있는 날 강조)
     ContentMap.jsx            지도 (lazy 로드) — 핀 계산·범례·시트·위치 없는 카드 안내
@@ -55,6 +56,8 @@ src/
   utils/
     linkAnalyzer.js           링크 → 카드 초안 (Edge Function 호출, oEmbed 폴백)
     placeSearch.js            장소 검색 Edge Function 호출
+    regions.js                주소 → 동네 묶기 (동 우선 · 구까지 폴백) — 지역 검색 후보
+    regionSearch.js           동네 검색 (AI 1순위 · 이름/태그 로컬 매칭 폴백)
     timeSlots.js              '가기 좋은 시간대' 고정 목록 · 정규화 (프론트 단일 출처)
     analyzeTimeSlots.js       기존 카드들의 시간대 일괄 분석 호출 (20장씩 · 진행률)
     categoryColors.js         태그 → 색 (직접 고른 색 우선 · 나머지는 팔레트 자동 배정)
@@ -73,8 +76,10 @@ supabase/
   functions/analyze-link/     Claude로 링크 분석 + 장소 자동 검색 + 시간대 판단
   functions/analyze-time/     기존 카드들의 시간대만 일괄 재분석 (배치)
   functions/place-search/     네이버 지역 검색 프록시
+  functions/region-search/    추상적인 검색어 → 보드에 있는 동네를 관련도 순으로
   functions/instagram-webhook/ 인스타 DM 웹훅 (검증용 탐침 — payload를 로그로만 남긴다)
 docs/MAP_FEATURE.md           지도 기능 기획 노트 (아직 미구현 단계 포함)
+docs/REGION_SEARCH.md         지역(동네) 검색 기획·구현 노트
 docs/SHARE_TARGET.md          인스타 공유 → 카드 (폰별 설치 방법 포함)
 SUPABASE_SETUP.md             공유 DB · Edge Function · 네이버 키 설정 안내
 ```
@@ -112,6 +117,11 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
 훑고, 누르면 `ContentSheet`가 풀 카드를 띄운다. 목록을 전부 풀 카드로 깔면 임베드·사진
 때문에 한 화면에 두세 장밖에 안 들어와서 훑을 수가 없다. **풀 카드(`ContentCard`)는
 시트 안에서만 쓴다** — 목록에 직접 넣지 말 것.
+
+**동네는 주소에서 계산해 낸다 — 저장하지 않는다.** 지역 검색의 후보(동네)는
+`places[].address`를 그때그때 파싱해서 만든다(`src/utils/regions.js`). 컬럼을 새로 만들어
+동네를 적어 두면 주소를 고칠 때마다 어긋난다. 도로명주소에는 동 이름이 없으므로
+**동을 못 뽑으면 구·시·군으로 묶는 폴백을 지우지 말 것** — 저장된 카드의 상당수가 그 경로다.
 
 **편집 모드는 없다.** 카드의 ✏️ 수정은 항상 떠 있고, 나머지(완료 전환·순서 이동·삭제)는
 카드의 `⋯` 뒤에 접혀 있다. 예전엔 상단 '편집' 토글을 켜야 액션이 나왔는데 한 번 더 누르는
@@ -192,6 +202,9 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
   **시 경계(주황)와 구 경계(회색) 두 단계**로 나눠 그린다 — 구를 먼저 깔고 시를 위에 얹는다.
   화면에 걸치는 것만, 배율 10 이상에서만 그린다 (전국을 다 얹으면 폴리라인이 2,000개가 넘는다).
   **JSON을 손으로 고치지 말고 스크립트를 고쳐서 다시 생성할 것.**
+- **지역 검색** — `region-search` 함수. 후보 동네는 프론트가 주소에서 만들어 보내고,
+  Claude는 **주어진 번호 중에서만** 고른다 (없는 동네를 추천하지 못하게). 함수를 배포하지
+  않아도 이름·태그 로컬 매칭으로 검색은 되고, AI를 못 쓴 이유를 화면에 남긴다.
 - **인스타 DM 웹훅** — `instagram-webhook` 함수. **아직 검증 단계**로, 릴스를 DM으로
   공유했을 때 payload에 원본 permalink가 들어오는지만 확인한다 (카드는 만들지 않는다).
   Meta는 anon 키를 안 붙이므로 **이 함수만 JWT 검증을 꺼야** 하고, 그래서 공개 엔드포인트가 된다
