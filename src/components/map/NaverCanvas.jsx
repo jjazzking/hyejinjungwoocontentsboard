@@ -31,6 +31,7 @@ export default function NaverCanvas({
   showDistricts,
   onViewChange,
   className,
+  focus = null,
 }) {
   const containerRef = useRef(null)
   const markersRef = useRef(new Map())
@@ -194,6 +195,21 @@ export default function NaverCanvas({
       reportFailure(error)
     }
   }, [pins, selectedKey, reportFailure])
+
+  // 바깥에서 '이 핀으로 가 줘'를 요청하면 그 핀으로 옮겨 확대한다 ({ key, nonce } — 같은 핀도 다시 누르면 다시 간다)
+  useEffect(() => {
+    if (!map || !focus || !window.naver?.maps) return
+    const pin = pins.find((p) => p.key === focus.key)
+    if (!pin) return
+    try {
+      map.setCenter(new window.naver.maps.LatLng(pin.lat, pin.lng))
+      map.setZoom(16)
+    } catch (error) {
+      reportFailure(error)
+    }
+    // pins가 바뀔 때마다 다시 옮기면 사용자가 움직인 지도가 튄다 — 요청이 올 때만
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, focus])
 
   // 경계를 켤 때 데이터를 받는다
   useEffect(() => {

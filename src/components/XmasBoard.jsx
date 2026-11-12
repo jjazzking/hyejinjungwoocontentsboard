@@ -65,6 +65,8 @@ export default function XmasBoard({ onAddToBoard }) {
   const [kind, setKind] = useState(null)
   const [capitalOnly, setCapitalOnly] = useState(true)
   const [expanded, setExpanded] = useState(null)
+  // 카드의 '지도에서 보기' → 위 지도를 그 핀으로 옮긴다 ({ id, nonce })
+  const [mapFocus, setMapFocus] = useState(null)
 
   const range = weekends.find((w) => w.key === weekendKey) ?? null
 
@@ -250,6 +252,7 @@ export default function XmasBoard({ onAddToBoard }) {
               onOpen={(pin) => focus(pin.content.id)}
               onOpenCard={focus}
               onEdit={(item) => focus(item.id)}
+              focusRequest={mapFocus}
             />
           </Suspense>
         </MapErrorBoundary>
@@ -281,6 +284,7 @@ export default function XmasBoard({ onAddToBoard }) {
               onAdd={() => addToBoard(spot)}
               onHide={() => patch(spot.id, { hidden: !spot.hidden })}
               onLike={likesReady ? (who) => toggleLike(spot.id, who) : null}
+              onShowOnMap={() => setMapFocus({ id: spot.id, nonce: Date.now() })}
             />
           ))}
         </ul>
@@ -289,7 +293,7 @@ export default function XmasBoard({ onAddToBoard }) {
   )
 }
 
-function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide, onLike }) {
+function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide, onLike, onShowOnMap }) {
   const [sources, setSources] = useState(null)
   const [imageOk, setImageOk] = useState(true)
   const meta = kindOf(spot.kind)
@@ -411,7 +415,16 @@ function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide, onLike
             </ul>
           )}
 
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
+            {typeof spot.place?.lat === 'number' && typeof spot.place?.lng === 'number' && (
+              <button
+                type="button"
+                onClick={onShowOnMap}
+                className="rounded-full bg-sky-50 px-3 py-1 font-medium text-sky-700 ring-1 ring-sky-200 transition-colors hover:bg-sky-100"
+              >
+                🗺️ 지도에서 보기
+              </button>
+            )}
             <button
               type="button"
               disabled={Boolean(spot.added_content_id)}

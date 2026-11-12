@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import LeafletCanvas from './map/LeafletCanvas.jsx'
 import MapLegend from './map/MapLegend.jsx'
 import PinMiniCard from './map/PinMiniCard.jsx'
@@ -36,8 +36,11 @@ function loadDistrictsPref() {
  * colorMap 은 Dashboard가 **보드 전체 태그**로 만든 { 태그 → 색 } Map이다 —
  * 여기서 따로 만들면 필터를 걸 때마다 핀 색이 바뀌고, 태그 관리 탭에서 고른 색도 안 먹는다.
  */
-export default function ContentMap({ items, colorMap, onOpen, onOpenCard, onEdit }) {
+export default function ContentMap({ items, colorMap, onOpen, onOpenCard, onEdit, focusRequest = null }) {
   const [selectedKey, setSelectedKey] = useState(null)
+  // 바깥(예: 🎄 탭의 '지도에서 보기')에서 카드 id로 핀을 찾아 달라고 할 때: { id, nonce }
+  const [focus, setFocus] = useState(null)
+  const wrapperRef = useRef(null)
   // 스크립트는 멀쩡했지만 실제로 그리다가 깨진 경우 (인증 실패한 반쪽짜리 지도 등)
   const [naverBroken, setNaverBroken] = useState(false)
   const [showDistricts, setShowDistricts] = useState(loadDistrictsPref)
@@ -81,6 +84,17 @@ export default function ContentMap({ items, colorMap, onOpen, onOpenCard, onEdit
   )
 
   const selected = pins.find((pin) => pin.key === selectedKey) ?? null
+
+  useEffect(() => {
+    if (!focusRequest) return
+    const pin = pins.find((p) => p.content.id === focusRequest.id)
+    if (!pin) return
+    setSelectedKey(pin.key)
+    setFocus({ key: pin.key, nonce: focusRequest.nonce })
+    wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // 요청이 올 때만 반응한다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest])
 
   // 필터가 바뀌어 선택한 핀이 사라졌으면 미니 카드도 닫는다
   useEffect(() => {
@@ -134,7 +148,7 @@ export default function ContentMap({ items, colorMap, onOpen, onOpenCard, onEdit
   const Canvas = useNaver ? NaverCanvas : LeafletCanvas
 
   return (
-    <div className="mb-6">
+    <div className="mb-6" ref={wrapperRef}>
       <div className="relative overflow-hidden rounded-2xl shadow-sm ring-1 ring-neutral-900/5">
         <Canvas
           // 네이버 → OSM으로 갈아탈 때 지도 DOM을 새로 만들도록 키를 바꾼다
@@ -145,6 +159,7 @@ export default function ContentMap({ items, colorMap, onOpen, onOpenCard, onEdit
           onFailure={handleNaverFailure}
           showDistricts={showDistricts}
           onViewChange={handleViewChange}
+          focus={focus}
           className="h-80 w-full bg-neutral-100 sm:h-96"
         />
 

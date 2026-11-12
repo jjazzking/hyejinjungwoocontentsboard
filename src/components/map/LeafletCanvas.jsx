@@ -41,6 +41,7 @@ export default function LeafletCanvas({
   showDistricts,
   onViewChange,
   className,
+  focus = null,
 }) {
   const containerRef = useRef(null)
   const markersRef = useRef(new Map())
@@ -134,6 +135,15 @@ export default function LeafletCanvas({
         ?.setIcon(icon(pin.color, pin.content.status === 'COMPLETED', pin.key === selectedKey))
     }
   }, [pins, selectedKey])
+
+  // 바깥에서 '이 핀으로 가 줘'를 요청하면 그 핀으로 옮겨 확대한다 ({ key, nonce })
+  useEffect(() => {
+    if (!map || !focus) return
+    const pin = pins.find((p) => p.key === focus.key)
+    if (pin) map.setView([pin.lat, pin.lng], 16, { animate: true })
+    // 요청이 올 때만 옮긴다 (pins 변화로는 안 움직임)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, focus])
 
   // 경계를 켤 때 데이터를 받는다
   useEffect(() => {
