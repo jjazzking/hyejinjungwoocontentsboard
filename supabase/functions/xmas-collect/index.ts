@@ -5,6 +5,7 @@
 //   'instagram_start'  Apify 인스타 해시태그 수집을 '비동기로' 시작만 한다 (몇 분 걸림)
 //   'instagram_ingest' 끝난 Apify 실행의 게시물을 가져와 위와 같은 방식으로 저장
 //   'weekly'           naver + instagram_start (pg_cron이 매주 부르는 것)
+//   'enrich'           장소 미확인 재검색 + 사진 채우기(og:image → Storage 복사)
 //
 // Apify를 기다렸다가 처리까지 한 번에 하면 Edge Function 제한 시간(무료 150초)을 넘기 쉬워서
 // 시작/수거를 두 번으로 나눴다. 화면의 '지금 수집' 버튼은 start → 상태 확인 → ingest 를 차례로 부른다.
@@ -608,6 +609,106 @@ async function resolvePending(supabase: Supa, startedAt: number, detail: string[
   return resolved
 }
 
+// ── 썸네일 ───────────────────────────────────────────────────
+// 네이버 검색 API는 사진을 주지 않고, 인스타 사진 주소는 며칠 뒤 만료된다.
+// 그래서 (1) 사진이 없으면 출처 글 페이지의 og:image를 찾고 (2) 찾은 사진을
+// Storage 'photos' 버킷에 복사해 두고 그 주소를 쓴다. 이미 복사한 것은 건너뛴다.
+const STORAGE_MARK = '/storage/v1/object/public/'
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  'Accept-Language': 'ko,en;q=0.8',
+}
+
+function metaImage(html: string) {
+  for (const key of ['og:image', 'twitter:image']) {
+    const pattern = new RegExp(
+      `<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']+)["']|` +
+        `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${key}["']`,
+      'i',
+    )
+    const match = html.match(pattern)
+    const url = match?.[1] ?? match?.[2]
+    if (url && /^https?:\/\//.test(url)) return decodeEntities(url)
+  }
+  return null
+}
+
+/** 출처 글 → 대표 사진 주소. 네이버 블로그는 PC 주소가 iframe이라 모바일 주소로 연다 */
+async function pageImage(url: string) {
+  if (/instagram\.com/.test(url)) return null // 인스타는 페이지가 막혀 있어 수집 때 받은 사진을 쓴다
+  try {
+    const target = url.replace('://blog.naver.com/', '://m.blog.naver.com/')
+    const res = await fetchWithTimeout(target, { headers: BROWSER_HEADERS }, 8000)
+    if (!res.ok) return null
+    const html = (await res.text()).slice(0, 200_000)
+    return metaImage(html)
+  } catch {
+    return null
+  }
+}
+
+/** 사진을 내려받아 Storage에 올리고 공개 주소를 돌려준다. 실패하면 null */
+async function copyToStorage(supabase: Supa, spotId: string, imageUrl: string) {
+  try {
+    const res = await fetchWithTimeout(imageUrl, { headers: BROWSER_HEADERS }, 10000)
+    const type = res.headers.get('content-type') ?? ''
+    if (!res.ok || !type.startsWith('image/')) return null
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    if (bytes.length < 2000 || bytes.length > 4_000_000) return null
+    const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg'
+    const path = `xmas/${spotId}.${ext}`
+    const { error } = await supabase.storage.from('photos').upload(path, bytes, { contentType: type, upsert: true })
+    if (error) return null
+    return supabase.storage.from('photos').getPublicUrl(path).data.publicUrl
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 사진이 없거나 아직 복사하지 않은 후보를 채운다 (실행마다 최대 limit곳, 시간 예산 안에서).
+ * 순서: 이미 가진 사진(인스타) 복사 → 안 되면 출처 글들의 og:image.
+ */
+async function fillThumbnails(supabase: Supa, startedAt: number, detail: string[], limit = 40) {
+  const stats = { checked: 0, filled: 0 }
+  if (Date.now() - startedAt > TIME_BUDGET_MS - 15_000) return stats
+  const { data } = await supabase
+    .from('xmas_spots')
+    .select('id, thumbnail_url')
+    .eq('hidden', false)
+    .or(`thumbnail_url.is.null,thumbnail_url.not.like.*${STORAGE_MARK}*`)
+    .order('mention_count', { ascending: false })
+    .limit(limit)
+  const spots = (data ?? []) as Array<{ id: string; thumbnail_url: string | null }>
+  await mapLimit(spots, 4, async (spot) => {
+    if (Date.now() - startedAt > TIME_BUDGET_MS) return
+    stats.checked += 1
+    let stored = spot.thumbnail_url ? await copyToStorage(supabase, spot.id, spot.thumbnail_url) : null
+    if (!stored) {
+      const { data: sources } = await supabase
+        .from('xmas_sources')
+        .select('url')
+        .eq('spot_id', spot.id)
+        .neq('type', 'INSTAGRAM')
+        .order('posted_at', { ascending: false })
+        .limit(3)
+      for (const { url } of (sources ?? []) as Array<{ url: string }>) {
+        const image = await pageImage(url)
+        if (image) stored = await copyToStorage(supabase, spot.id, image)
+        if (stored) break
+      }
+    }
+    // 못 가져왔으면 원래 주소를 그대로 둔다 (일시적 실패일 수 있다 — 깨지면 화면이 이모지로 대신한다)
+    if (stored) {
+      const { error } = await supabase.from('xmas_spots').update({ thumbnail_url: stored }).eq('id', spot.id)
+      if (!error) stats.filled += 1
+    }
+  })
+  if (stats.checked > 0 && stats.filled === 0) detail.push(`사진 ${stats.checked}곳 확인했지만 하나도 못 가져옴`)
+  return stats
+}
+
 // ── 단계별 실행 ──────────────────────────────────────────────
 async function runNaver(supabase: Supa, startedAt: number, detail: string[]) {
   if (!naverHeaders()) {
@@ -708,7 +809,12 @@ Deno.serve(async (req) => {
     if (step === 'naver' || step === 'weekly') result.naver = await runNaver(supabase, startedAt, detail)
     if (step === 'instagram_start' || step === 'weekly') result.instagram = await runInstagramStart(supabase, detail)
     if (step === 'instagram_ingest') Object.assign(result, await runInstagramIngest(supabase, startedAt, detail))
-    if (!['naver', 'weekly', 'instagram_start', 'instagram_ingest'].includes(step)) {
+    // 수집 뒤 마무리: 장소 미확인 재검색 + 사진 채우기 (수집과 따로 불러 시간 예산을 따로 쓴다)
+    if (step === 'enrich') {
+      result.resolved = await resolvePending(supabase, startedAt, detail)
+      result.thumbnails = await fillThumbnails(supabase, startedAt, detail)
+    }
+    if (!['naver', 'weekly', 'instagram_start', 'instagram_ingest', 'enrich'].includes(step)) {
       result.ok = false
       detail.push(`모르는 step: ${step}`)
     }

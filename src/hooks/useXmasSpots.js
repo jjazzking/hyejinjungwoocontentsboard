@@ -148,10 +148,33 @@ export function useXmasSpots() {
       }
     }
     await refetch()
+
+    // 마무리: 장소 못 찾은 곳 다시 찾기 + 사진 채우기 (사진이 없으면 출처 글의 대표 사진)
+    say('🖼️ 사진·위치 채우는 중…')
+    const enrich = await invoke('enrich')
+    if (enrich.ok !== false) {
+      log.push(`마무리: 사진 ${enrich.thumbnails?.filled ?? 0}곳 · 위치 ${enrich.resolved ?? 0}곳 채움`)
+    }
+    for (const line of enrich.detail ?? []) log.push(`⚠️ ${line}`)
+    await refetch()
     if (alive.current) setCollect({ message: '✅ 수집 끝', log: [...log], done: true })
   }, [refetch])
 
+  /** 수집 없이 사진·위치만 채우기 (한 번에 최대 40곳) */
+  const runEnrich = useCallback(async () => {
+    if (alive.current) setCollect({ message: '🖼️ 사진·위치 채우는 중…', log: [] })
+    const enrich = await invoke('enrich')
+    const log = []
+    if (enrich.ok !== false) {
+      log.push(`사진 ${enrich.thumbnails?.filled ?? 0}곳 · 위치 ${enrich.resolved ?? 0}곳 채움`)
+    }
+    for (const line of enrich.detail ?? []) log.push(`⚠️ ${line}`)
+    await refetch()
+    if (alive.current) setCollect({ message: '✅ 끝', log, done: true })
+  }, [refetch])
+
   return {
+    runEnrich,
     available: isSupabaseConfigured,
     spots,
     lastRun,

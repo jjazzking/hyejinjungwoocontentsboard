@@ -55,6 +55,7 @@ export default function XmasBoard({ onAddToBoard }) {
     patch,
     loadSources,
     runCollect,
+    runEnrich,
     likesReady,
     toggleLike,
   } = useXmasSpots()
@@ -144,6 +145,16 @@ export default function XmasBoard({ onAddToBoard }) {
               ? `마지막 수집 ${new Date(lastRun.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · 후보 ${spots.filter((s) => !s.hidden).length}곳`
               : "아직 수집한 적이 없어요 · '🔄 지금 수집'을 눌러 모아 보세요"}
           </p>
+          <span className="flex gap-1.5">
+          <button
+            type="button"
+            disabled={Boolean(collecting)}
+            onClick={runEnrich}
+            title="새로 수집하지 않고, 사진·위치가 빠진 후보만 채웁니다 (한 번에 최대 40곳)"
+            className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 ring-1 ring-neutral-900/10 transition-colors hover:bg-neutral-50 disabled:opacity-60"
+          >
+            🖼️ 사진 채우기
+          </button>
           <button
             type="button"
             disabled={Boolean(collecting)}
@@ -152,6 +163,7 @@ export default function XmasBoard({ onAddToBoard }) {
           >
             {collecting ? '수집 중…' : '🔄 지금 수집'}
           </button>
+          </span>
         </div>
         {collect && (
           <div className="mt-2 rounded-xl bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
