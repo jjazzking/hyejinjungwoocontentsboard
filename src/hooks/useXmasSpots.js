@@ -113,6 +113,8 @@ export function useXmasSpots() {
 
     const start = await invoke('instagram_start')
     for (const line of start.detail ?? []) log.push(`⚠️ ${line}`)
+    // 지난 수집 이후 게시물만 받는다 (Apify는 받은 게시물 수만큼 과금)
+    if (start.instagram?.since) log.push(`인스타: ${start.instagram.since.slice(5).replace('-', '/')} 이후 게시물만 가져옴`)
     if (start.instagram?.runId) {
       for (let attempt = 0; attempt < 30; attempt += 1) {
         say(`📸 인스타 해시태그 수집 중… (${Math.round((attempt * 15) / 60)}분 경과, 보통 2~5분)`)

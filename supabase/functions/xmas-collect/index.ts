@@ -231,10 +231,60 @@ async function findPlace(query: string, detail: string[]): Promise<Place | null>
   }
 }
 
+/**
+ * 행사 이름 → 건물·가게 이름만.
+ * 네이버 지역 검색은 상호명 색인이라 "콘래드 서울 크리스마스 트리"는 못 찾고 "콘래드 서울"은 찾는다.
+ * 행사를 뜻하는 말과 괄호를 걷어 내서 두 번째 검색어로 쓴다.
+ */
+const EVENT_WORDS =
+  /(크리스마스\s*트리|크리스마스|성탄|홀리데이|윈터|겨울|점등|마켓|축제|빛축제|루미나리에|팝업|포토존|포토스팟|라운지|체험|객실|리추얼|에디션|장식|카페\s*크리스마스|christmas|xmas|holiday|market)/gi
+
+export function venueOnly(name: string) {
+  return name
+    .replace(/\([^)]*\)|〈[^〉]*〉|<[^>]*>/g, ' ')
+    .replace(/제?\d+회/g, ' ')
+    .replace(/20\d\d/g, ' ')
+    .replace(EVENT_WORDS, ' ')
+    // '트리'는 단어로 따로 있을 때만 (반얀트리 같은 상호를 깨지 않게)
+    .replace(/(^|\s)(트리|플라워)(?=\s|$)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** 검색어로 먼저 찾고, 못 찾으면 건물·가게 이름만으로 한 번 더 */
+async function findPlaceLoose(query: string, name: string, detail: string[]) {
+  const first = await findPlace(query, detail)
+  if (first) return first
+  const venue = venueOnly(name)
+  if (venue.length < 2 || venue === query) return null
+  return findPlace(venue, detail)
+}
+
 // ── Apify (인스타 해시태그) ───────────────────────────────────
 const APIFY_ACTOR = 'apify~instagram-scraper'
 
-async function startInstagramRun(detail: string[]) {
+/**
+ * 인스타를 어디서부터 가져올지.
+ * Apify는 돌려준 게시물 수만큼 요금을 매기므로, 이미 본 게시물을 매번 다시 받지 않도록
+ * **마지막으로 성공한 수집을 시작한 날 하루 전**부터만 가져온다 (경계에 걸친 글을 놓치지 않게 하루 겹침).
+ * 처음이거나 기록이 없으면 시즌 시작일부터.
+ */
+async function instagramSince(supabase: Supa) {
+  const { data } = await supabase
+    .from('xmas_runs')
+    .select('created_at')
+    .eq('step', 'instagram_start')
+    .eq('status', 'DONE')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const last = (data?.[0] as { created_at: string } | undefined)?.created_at
+  const season = seasonStart()
+  if (!last) return season
+  const since = toDay(new Date(new Date(last).getTime() - 24 * 3600_000).toISOString())!
+  return since > season ? since : season
+}
+
+async function startInstagramRun(detail: string[], since: string) {
   const token = Deno.env.get('APIFY_TOKEN')
   if (!token) {
     detail.push('APIFY_TOKEN 시크릿이 없어 인스타 수집을 건너뜀')
@@ -252,7 +302,7 @@ async function startInstagramRun(detail: string[]) {
           ),
           resultsType: 'posts',
           resultsLimit: INSTAGRAM_PER_TAG,
-          onlyPostsNewerThan: seasonStart(),
+          onlyPostsNewerThan: since,
           addParentData: false,
         }),
       },
@@ -449,10 +499,14 @@ async function processItems(supabase: Supa, items: RawItem[], startedAt: number,
   // 3) 관련 글의 장소를 네이버 지역 검색으로 확정 (같은 검색어는 한 번만)
   const relevant = done.filter((d) => d.ex?.relevant)
   stats.relevant = relevant.length
-  const queries = [...new Set(relevant.map((d) => d.ex!.placeQuery || d.ex!.name))]
+  const nameByQuery = new Map<string, string>()
+  for (const d of relevant) nameByQuery.set(d.ex!.placeQuery || d.ex!.name, d.ex!.name)
   const placeByQuery = new Map<string, Place | null>()
-  await mapLimit(queries, 3, async (q) => {
-    placeByQuery.set(q, Date.now() - startedAt > TIME_BUDGET_MS ? null : await findPlace(q, detail))
+  await mapLimit([...nameByQuery.keys()], 3, async (q) => {
+    placeByQuery.set(
+      q,
+      Date.now() - startedAt > TIME_BUDGET_MS ? null : await findPlaceLoose(q, nameByQuery.get(q)!, detail),
+    )
   })
 
   // 4) 기존 후보 불러와 합치기
@@ -546,7 +600,7 @@ async function resolvePending(supabase: Supa, startedAt: number, detail: string[
   let resolved = 0
   await mapLimit((data ?? []) as Array<{ id: string; name: string }>, 2, async (spot) => {
     if (Date.now() - startedAt > TIME_BUDGET_MS) return
-    const place = await findPlace(spot.name, detail)
+    const place = await findPlaceLoose(spot.name, spot.name, detail)
     if (!place) return
     const { error } = await supabase.from('xmas_spots').update({ place }).eq('id', spot.id)
     if (!error) resolved += 1
@@ -584,15 +638,16 @@ async function runInstagramStart(supabase: Supa, detail: string[]) {
     detail.push('아직 수거하지 않은 인스타 수집이 있어 새로 시작하지 않음')
     return { started: false, runId: last.apify_run_id }
   }
-  const run = await startInstagramRun(detail)
-  if (!run) return { started: false }
+  const since = await instagramSince(supabase)
+  const run = await startInstagramRun(detail, since)
+  if (!run) return { started: false, since }
   await supabase.from('xmas_runs').insert({
     step: 'instagram_start',
     apify_run_id: run.runId,
     dataset_id: run.datasetId,
     status: 'RUNNING',
   })
-  return { started: true, runId: run.runId }
+  return { started: true, runId: run.runId, since }
 }
 
 async function runInstagramIngest(supabase: Supa, startedAt: number, detail: string[]) {
