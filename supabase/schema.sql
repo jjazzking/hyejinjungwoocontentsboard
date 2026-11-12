@@ -166,3 +166,69 @@ drop policy if exists "anyone can view photos" on storage.objects;
 create policy "anyone can view photos"
   on storage.objects for select
   using (bucket_id = 'photos');
+
+-- ─────────────────────────────────────────────
+-- 6. 🎄 크리스마스 탭 — 시즌 장소 후보 (xmas-collect 함수가 채운다)
+--    카드(contents)와 따로 둔다. 수집한 후보는 수십~수백 개라 보드에 섞이면 안 되고,
+--    마음에 드는 것만 '보드에 담기'로 카드가 된다.
+-- ─────────────────────────────────────────────
+create table if not exists public.xmas_spots (
+  id             uuid primary key default gen_random_uuid(),
+  -- 같은 장소를 하나로 합치는 키 (네이버에서 찾은 장소명, 못 찾았으면 'q:' + AI가 뽑은 이름)
+  spot_key       text not null unique,
+  name           text not null,
+  -- MARKET 마켓 · TREE 트리/점등 · FACADE 백화점 외관·미디어파사드 · LIGHTS 빛축제·일루미네이션
+  -- CAFE 카페·식당 장식 · HOTEL 호텔 · POPUP 팝업 · ETC
+  kind           text not null default 'ETC',
+  summary        text not null default '',
+  start_date     date,
+  end_date       date,
+  -- { name, address, lat, lng, category, url, source } — contents.places 원소와 같은 모양
+  place          jsonb,
+  thumbnail_url  text,
+  mention_count  integer not null default 0,
+  hidden         boolean not null default false,   -- '관심 없음'
+  added_content_id uuid,                           -- '보드에 담기'로 만든 카드
+  first_seen_at  timestamptz not null default now(),
+  last_seen_at   timestamptz not null default now()
+);
+
+-- 읽어 온 글 하나하나. 한 번 본 글은 다시 분석하지 않는다 (spot_id가 null = 관련 없는 글)
+create table if not exists public.xmas_sources (
+  url        text primary key,
+  spot_id    uuid references public.xmas_spots (id) on delete set null,
+  type       text not null,          -- INSTAGRAM | BLOG | NEWS
+  title      text not null default '',
+  posted_at  date,
+  created_at timestamptz not null default now()
+);
+create index if not exists xmas_sources_spot_idx on public.xmas_sources (spot_id);
+
+-- 수집 실행 기록 (Apify 비동기 실행 추적 + 화면에 보여 줄 마지막 결과)
+create table if not exists public.xmas_runs (
+  id            uuid primary key default gen_random_uuid(),
+  step          text not null,         -- naver | instagram_start | instagram_ingest
+  apify_run_id  text,
+  dataset_id    text,
+  status        text not null default 'DONE',  -- RUNNING | DONE | FAILED
+  ingested      boolean not null default false,
+  stats         jsonb not null default '{}'::jsonb,
+  detail        text not null default '',
+  created_at    timestamptz not null default now()
+);
+
+alter table public.xmas_spots enable row level security;
+alter table public.xmas_sources enable row level security;
+alter table public.xmas_runs enable row level security;
+
+drop policy if exists "anyone can do everything on xmas_spots" on public.xmas_spots;
+create policy "anyone can do everything on xmas_spots"
+  on public.xmas_spots for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "anyone can read xmas_sources" on public.xmas_sources;
+create policy "anyone can read xmas_sources"
+  on public.xmas_sources for select to anon, authenticated using (true);
+
+drop policy if exists "anyone can read xmas_runs" on public.xmas_runs;
+create policy "anyone can read xmas_runs"
+  on public.xmas_runs for select to anon, authenticated using (true);

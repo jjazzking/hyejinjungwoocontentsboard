@@ -534,3 +534,69 @@ alter table public.contents
 
 > 카드 수십 개 기준 한 번 검색에 Claude Haiku 몇 원 수준입니다. 카드 본문을 통째로
 > 보내지 않고 제목·태그·장소 이름·메모만 추려 보냅니다 (사진·링크는 안 보냅니다).
+
+## 14. 🎄 크리스마스 탭 켜기 (시즌 한정 · 선택)
+
+크리스마스까지 주말마다 갈 만한 장식·마켓·트리를 **자동으로 모아 두는 탭**입니다.
+네이버 블로그·뉴스와 인스타 해시태그를 읽어서 Claude가 장소·운영 기간을 뽑고, 네이버 지역 검색으로
+지도에 핀을 찍어 둡니다. 마음에 드는 곳만 **＋ 보드에 담기**로 '할 것들' 카드가 됩니다.
+탭은 공유 DB가 연결되어 있을 때, 11월 1일 ~ 1월 6일에만 보입니다.
+
+새 키는 필요 없습니다 — 6번(ANTHROPIC_API_KEY)·6-3번(APIFY_TOKEN)·7번(NAVER_CLIENT_ID/SECRET)에서
+등록한 시크릿을 그대로 씁니다. **아래 순서대로** 해 주세요 (테이블이 먼저입니다).
+
+### 14-1. 테이블 만들기 ⚠️ 먼저 할 것
+
+Supabase → **SQL Editor** → **New query** 에 [`supabase/schema.sql`](./supabase/schema.sql)의
+**`6. 🎄 크리스마스 탭`** 부분(맨 아래)을 붙여넣고 **Run**. (파일 전체를 다시 실행해도 안전합니다)
+
+### 14-2. 수집 함수 배포
+
+1. Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor**
+2. Function name: `xmas-collect`
+3. [`supabase/functions/xmas-collect/index.ts`](./supabase/functions/xmas-collect/index.ts) 내용 전체를 붙여넣기
+4. **Deploy function**
+
+여기까지 하면 사이트의 🎄 탭에서 **🔄 지금 수집**을 눌러 바로 쓸 수 있습니다.
+네이버 1~2분 → 인스타 2~5분 순서로 진행되고, 진행 상황과 실패 이유가 탭 위쪽에 그대로 나옵니다.
+
+> - **네이버 블로그·뉴스 검색**은 지역 검색과 같은 NAVER API HUB 키로 부릅니다
+>   (`/search/v1/blog`, `/search/v1/news`). 401·403이 뜨면 NCP 콘솔에서 그 키의 구독 상품에
+>   블로그·뉴스 검색이 들어 있는지 확인하세요.
+> - **인스타**는 Apify 무료 크레딧(월 $5)을 씁니다. 해시태그 6개 × 30개가 기본값이고,
+>   함수 맨 위의 `INSTAGRAM_HASHTAGS` / `INSTAGRAM_PER_TAG`로 조절합니다. 링크 분석과 같은 크레딧을 나눠 씁니다.
+> - 한 번 읽은 글은 다시 분석하지 않으므로 여러 번 눌러도 비용이 크게 늘지 않습니다.
+
+### 14-3. 매주 자동 수집 (pg_cron)
+
+**SQL Editor**에서 아래를 실행합니다. `<프로젝트ID>`와 `<anon 키>`는 3번에서 확인한 값으로 바꾸세요
+(anon 키는 원래 공개되는 키라 여기 적어도 괜찮습니다 — 서비스 키는 절대 넣지 마세요).
+매주 **목요일 밤 9시(한국)** 에 네이버 수집 + 인스타 시작, 20분·40분 뒤에 인스타 결과를 수거합니다.
+
+```sql
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+-- 다시 실행해도 되도록 기존 일정을 먼저 지운다 (없으면 그냥 넘어감)
+select cron.unschedule(jobname) from cron.job where jobname like 'xmas-%';
+
+-- pg_cron은 UTC 기준: 목 12:00 UTC = 목 21:00 KST
+select cron.schedule('xmas-weekly', '0 12 * * 4', $$
+  select net.http_post(
+    url := 'https://<프로젝트ID>.supabase.co/functions/v1/xmas-collect',
+    headers := '{"Content-Type":"application/json","Authorization":"Bearer <anon 키>"}'::jsonb,
+    body := '{"step":"weekly"}'::jsonb,
+    timeout_milliseconds := 150000
+  ) $$);
+
+select cron.schedule('xmas-ingest', '20,40 12 * * 4', $$
+  select net.http_post(
+    url := 'https://<프로젝트ID>.supabase.co/functions/v1/xmas-collect',
+    headers := '{"Content-Type":"application/json","Authorization":"Bearer <anon 키>"}'::jsonb,
+    body := '{"step":"instagram_ingest"}'::jsonb,
+    timeout_milliseconds := 150000
+  ) $$);
+```
+
+크리스마스가 지나면 `select cron.unschedule(jobname) from cron.job where jobname like 'xmas-%';`
+한 줄로 멈출 수 있습니다. 모은 데이터는 그대로 남아서 내년에 다시 켜면 이어서 씁니다.

@@ -46,6 +46,7 @@ src/
     BulkTimeButton.jsx        카드들의 '가기 좋은 시간대' 일괄 채우기 (20장씩 묶어 호출)
     ShareToast.jsx            공유로 받은 링크의 저장 결과 알림 (+ 수정하기)
     SettingsMenu.jsx          ⚙️ 설정 서랍 — 가끔 쓰는 일괄 작업 버튼을 접어 둔다
+    XmasBoard.jsx             🎄 크리스마스 탭 (시즌 한정) — 수집 후보를 주말별로 거르고 '보드에 담기'
     PhotoCarousel.jsx / embeds/   사진·인스타·유튜브·틱톡 표시
   hooks/
     useBulkRun.js             카드를 한 장씩 오래 걸리는 작업에 태우는 공용 실행기
@@ -54,6 +55,7 @@ src/
     useCategories.js          커스텀 카테고리 + 태그별 색
     useClipboardSuggestion.js 클립보드 감시
     useSharedLink.js          공유(`?url=`/`?text=`)로 들어온 링크 1회 수신
+    useXmasSpots.js           🎄 후보(xmas_spots) 읽기·숨기기 + '지금 수집' 단계 실행
   utils/
     linkAnalyzer.js           링크 → 카드 초안 (Edge Function 호출, oEmbed 폴백)
     placeSearch.js            장소 검색 Edge Function 호출
@@ -63,6 +65,7 @@ src/
     analyzeTimeSlots.js       기존 카드들의 시간대 일괄 분석 호출 (20장씩 · 진행률)
     categoryColors.js         태그 → 색 (직접 고른 색 우선 · 나머지는 팔레트 자동 배정)
     uploadPhoto.js            Supabase Storage 업로드
+    xmasSeason.js             🎄 주말 목록 · 기간 판정 · 종류(KIND) 목록 (프론트 단일 출처)
   data/
     districtBoundaries.json   시·군·구 경계선 (생성물 — 직접 고치지 말 것)
   lib/supabaseClient.js       설정 없으면 null → localStorage 모드
@@ -78,6 +81,7 @@ supabase/
   functions/analyze-time/     기존 카드들의 시간대만 일괄 재분석 (배치)
   functions/place-search/     네이버 지역 검색 프록시
   functions/region-search/    추상적인 검색어 → 보드에 있는 동네를 관련도 순으로
+  functions/xmas-collect/     🎄 네이버 블로그·뉴스 + 인스타 해시태그(Apify) → 시즌 장소 후보
   functions/instagram-webhook/ 인스타 DM 웹훅 (검증용 탐침 — payload를 로그로만 남긴다)
 docs/MAP_FEATURE.md           지도 기능 기획 노트 (아직 미구현 단계 포함)
 docs/REGION_SEARCH.md         지역(동네) 검색 기획·구현 노트
@@ -230,6 +234,14 @@ GitHub Secrets에 둔다. anon 키는 RLS로, 지도 Client ID는 서비스 URL 
   (developers.naver.com이 아니다 — 검색 API는 NCP로 이관되었다.)
   좌표는 `mapx`/`mapy`를 10,000,000으로 나눠 WGS84로 변환하고, `title`의 `<b>` 태그와
   HTML 엔티티는 제거한다.
+
+- **🎄 크리스마스 수집** — `xmas-collect` 함수. 후보는 `contents`가 아니라 **`xmas_spots`**에
+  쌓는다 (수백 개가 보드를 덮으면 안 되므로). 고른 것만 '보드에 담기'로 카드가 된다.
+  읽은 글은 `xmas_sources`에 남겨 **다시 분석하지 않는다** — 관련 없는 글도 `spot_id = null`로 남긴다.
+  Apify는 기다리면 Edge Function 제한 시간을 넘기므로 **시작(`instagram_start`)과 수거(`instagram_ingest`)를
+  나눈다**. 시간 예산을 넘기면 남은 글은 기록하지 않고 멈춰 다음 실행에서 이어진다.
+  종류(`KIND`) 목록은 함수의 `KINDS`와 `src/utils/xmasSeason.js`의 `XMAS_KINDS`가 같아야 한다.
+  탭은 Supabase가 있고 11/1~1/6일 때만 보인다. 설정은 SUPABASE_SETUP.md 14번.
 
 ## 배포
 
