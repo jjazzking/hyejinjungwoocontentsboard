@@ -80,11 +80,11 @@ export default function XmasBoard({ onAddToBoard }) {
       if (view === 'OPEN' && range) return openState(spot, range) !== 'closed'
       return true
     })
-    // 확실히 열린 곳 → 기간 미확인 순, 그 안에서는 좋아요 많은 순 → 많이 언급된 순
+    // 좋아요 많은 순(둘 다 → 한 명 → 없음)이 먼저, 그 안에서 확실히 열린 곳 → 많이 언급된 순
     const rank = (spot) => (range && openState(spot, range) === 'open' ? 0 : 1)
     const likes = (spot) => (spot.liked_by ?? []).length
     return list.sort(
-      (a, b) => rank(a) - rank(b) || likes(b) - likes(a) || b.mention_count - a.mention_count,
+      (a, b) => likes(b) - likes(a) || rank(a) - rank(b) || b.mention_count - a.mention_count,
     )
   }, [spots, view, kind, capitalOnly, range])
 
@@ -269,7 +269,7 @@ export default function XmasBoard({ onAddToBoard }) {
           </p>
         </div>
       ) : (
-        <ul className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 items-start gap-x-3 gap-y-4 pt-2 sm:grid-cols-2 lg:grid-cols-3">
           {visible.map((spot) => (
             <SpotCard
               key={spot.id}
@@ -296,6 +296,14 @@ function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide, onLike
   const badge = todayBadge(spot)
   const period = formatPeriod(spot)
   const isNew = Date.now() - new Date(spot.first_seen_at).getTime() < NEW_WITHIN_MS
+  // 좋아요 단계: 0 보통 · 1 한 명(은은하게) · 2 둘 다(확 티 나게)
+  const likeCount = (spot.liked_by ?? []).length
+  const likeStyle =
+    likeCount >= 2
+      ? 'bg-gradient-to-br from-rose-100 via-pink-50 to-sky-100 ring-2 ring-rose-400 shadow-md shadow-rose-200'
+      : likeCount === 1
+        ? 'bg-rose-50/70 ring-2 ring-rose-200'
+        : 'bg-white ring-1 ring-neutral-900/5'
 
   const toggle = () => {
     if (!expanded && sources === null) loadSources(spot.id).then(setSources)
@@ -305,10 +313,15 @@ function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide, onLike
   return (
     <li
       id={`xmas-${spot.id}`}
-      className={`rounded-2xl bg-white p-3 shadow-sm ring-1 transition-shadow ${
-        expanded ? 'ring-rose-300' : 'ring-neutral-900/5'
+      className={`relative rounded-2xl p-3 shadow-sm transition-shadow ${likeStyle} ${
+        expanded && likeCount === 0 ? '!ring-rose-300' : ''
       }`}
     >
+      {likeCount >= 2 && (
+        <span className="absolute -top-2.5 right-3 rounded-full bg-rose-500 px-2.5 py-0.5 text-[11px] font-bold text-white shadow">
+          💑 둘 다 좋아요
+        </span>
+      )}
       <button type="button" onClick={toggle} className="flex w-full gap-3 text-left">
         <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-rose-50 text-2xl">
           {spot.thumbnail_url && imageOk ? (
@@ -326,7 +339,15 @@ function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide, onLike
               <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">보드에 있음</span>
             )}
           </span>
-          <span className="mt-0.5 block truncate text-sm font-semibold text-neutral-900">{spot.name}</span>
+          <span
+            className={`mt-0.5 block truncate font-semibold ${
+              likeCount >= 2 ? 'text-base text-rose-700' : 'text-sm text-neutral-900'
+            }`}
+          >
+            {likeCount === 1 && <span className="mr-1 text-rose-400">♥</span>}
+            {likeCount >= 2 && <span className="mr-1 text-rose-500">♥♥</span>}
+            {spot.name}
+          </span>
           <span className="block truncate text-xs text-neutral-500">
             {meta.emoji} {meta.label}
             {period && ` · ${period}`} · 언급 {spot.mention_count}회
