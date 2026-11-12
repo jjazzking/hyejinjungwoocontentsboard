@@ -101,6 +101,7 @@ export function useXmasSpots() {
     const describe = (label, stats) =>
       stats
         ? `${label}: 새 글 ${stats.fresh}개 중 관련 ${stats.relevant}개 → 새 후보 ${stats.spotsNew}곳, 갱신 ${stats.spotsUpdated}곳` +
+          (stats.resolvedLater ? ` · 미확인 ${stats.resolvedLater}곳 위치 찾음` : '') +
           (stats.leftover ? ` (남은 ${stats.leftover}개는 다음에)` : '')
         : `${label}: 건너뜀`
 

@@ -153,7 +153,13 @@ async function searchNaver(kind: 'blog' | 'news', query: string, detail: string[
     )
     if (!res.ok) {
       const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 140)
-      detail.push(`네이버 ${kind === 'blog' ? '블로그' : '뉴스'} 검색 실패('${query}') — ${res.status} ${body}`)
+      const label = kind === 'blog' ? '블로그' : '뉴스'
+      // 키 권한 문제(401·403)는 검색어마다 똑같이 나므로 한 줄로만 남긴다
+      const message =
+        res.status === 401 || res.status === 403
+          ? `네이버 ${label} 검색 권한 없음(${res.status}) — NCP 콘솔에서 이 Application에 '${label} 검색' API를 켜야 함`
+          : `네이버 ${label} 검색 실패('${query}') — ${res.status} ${body}`
+      if (!detail.includes(message)) detail.push(message)
       return []
     }
     const data = await res.json()
@@ -194,11 +200,14 @@ async function findPlace(query: string, detail: string[]): Promise<Place | null>
   const headers = naverHeaders()
   if (!headers) return null
   try {
-    const res = await fetchWithTimeout(
-      `${NAVER_BASE}/local?query=${encodeURIComponent(query)}&display=1`,
-      { headers },
-      8000,
-    )
+    const call = () =>
+      fetchWithTimeout(`${NAVER_BASE}/local?query=${encodeURIComponent(query)}&display=1`, { headers }, 8000)
+    let res = await call()
+    // 동시에 많이 부르면 502·429가 섞여 온다 — 잠깐 쉬고 한 번만 더
+    if (res.status === 429 || res.status >= 500) {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      res = await call()
+    }
     if (!res.ok) {
       const message = `네이버 지역 검색 실패 — ${res.status}`
       if (!detail.includes(message)) detail.push(message)
@@ -304,7 +313,9 @@ const SYSTEM_PROMPT = `당신은 한국 커플이 크리스마스 시즌 주말�
 규칙:
 - relevant: 한국에서 직접 가서 볼 수 있는 크리스마스·연말 장식, 트리, 크리스마스 마켓, 빛축제,
   백화점·호텔·카페의 크리스마스 연출, 크리스마스 팝업이면 true.
-  광고성 상품 판매, 케이크 예약, 해외, 집 꾸미기, 장소가 특정되지 않는 글은 false.
+  광고성 상품 판매, 케이크 예약, 해외, 집 꾸미기, 공연·콘서트, 장소가 특정되지 않는 글은 false.
+  ★ 여러 곳을 나열한 모음글·가이드("크리스마스 마켓 5곳", "명소 모음")는 false — 한 장소를 다룬 글만 true.
+  가게 이름을 모르는 글("○○동 어느 카페")도 false.
 - name: 사람이 알아볼 이름. 예) "더현대 서울 크리스마스 빌리지", "신세계 본점 미디어파사드".
 - kind: MARKET(마켓) TREE(대형 트리·점등) FACADE(백화점 외관·미디어파사드) LIGHTS(빛축제·일루미네이션)
   CAFE(카페·식당 장식) HOTEL(호텔 로비·라운지) POPUP(팝업스토어) ETC 중 하나.
@@ -440,7 +451,7 @@ async function processItems(supabase: Supa, items: RawItem[], startedAt: number,
   stats.relevant = relevant.length
   const queries = [...new Set(relevant.map((d) => d.ex!.placeQuery || d.ex!.name))]
   const placeByQuery = new Map<string, Place | null>()
-  await mapLimit(queries, 5, async (q) => {
+  await mapLimit(queries, 3, async (q) => {
     placeByQuery.set(q, Date.now() - startedAt > TIME_BUDGET_MS ? null : await findPlace(q, detail))
   })
 
@@ -520,6 +531,29 @@ async function processItems(supabase: Supa, items: RawItem[], startedAt: number,
   return stats
 }
 
+/**
+ * 지난번에 지역 검색이 실패해 '장소 미확인'으로 남은 후보를 이름으로 다시 찾아 본다.
+ * 실행마다 최대 20곳만 (시간 예산 안에서). 찾으면 place만 채운다 — spot_key는 그대로 둔다.
+ */
+async function resolvePending(supabase: Supa, startedAt: number, detail: string[]) {
+  if (Date.now() - startedAt > TIME_BUDGET_MS - 20_000) return 0
+  const { data } = await supabase
+    .from('xmas_spots')
+    .select('id, name')
+    .is('place', null)
+    .eq('hidden', false)
+    .limit(20)
+  let resolved = 0
+  await mapLimit((data ?? []) as Array<{ id: string; name: string }>, 2, async (spot) => {
+    if (Date.now() - startedAt > TIME_BUDGET_MS) return
+    const place = await findPlace(spot.name, detail)
+    if (!place) return
+    const { error } = await supabase.from('xmas_spots').update({ place }).eq('id', spot.id)
+    if (!error) resolved += 1
+  })
+  return resolved
+}
+
 // ── 단계별 실행 ──────────────────────────────────────────────
 async function runNaver(supabase: Supa, startedAt: number, detail: string[]) {
   if (!naverHeaders()) {
@@ -531,7 +565,8 @@ async function runNaver(supabase: Supa, startedAt: number, detail: string[]) {
     4,
     ([kind, q]) => searchNaver(kind, q, detail),
   )
-  return processItems(supabase, lists.flat(), startedAt, detail)
+  const stats = await processItems(supabase, lists.flat(), startedAt, detail)
+  return { ...stats, resolvedLater: await resolvePending(supabase, startedAt, detail) }
 }
 
 async function runInstagramStart(supabase: Supa, detail: string[]) {
@@ -582,7 +617,11 @@ async function runInstagramIngest(supabase: Supa, startedAt: number, detail: str
     return { pending: false, stats: null }
   }
   const items = await apifyItems(run.dataset_id)
-  const stats = await processItems(supabase, items, startedAt, detail)
+  const stats = {
+    ...(await processItems(supabase, items, startedAt, detail)),
+    resolvedLater: 0,
+  }
+  stats.resolvedLater = await resolvePending(supabase, startedAt, detail)
   // 시간이 모자라 남은 글이 있으면 수거 완료로 치지 않는다 — 다음 호출에서 이어서
   if (stats.leftover === 0) {
     await supabase.from('xmas_runs').update({ ingested: true, status: 'DONE' }).eq('id', run.id)

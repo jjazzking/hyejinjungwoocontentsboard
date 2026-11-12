@@ -567,7 +567,7 @@ Supabase → **SQL Editor** → **New query** 에 [`supabase/schema.sql`](./supa
 >   함수 맨 위의 `INSTAGRAM_HASHTAGS` / `INSTAGRAM_PER_TAG`로 조절합니다. 링크 분석과 같은 크레딧을 나눠 씁니다.
 > - 한 번 읽은 글은 다시 분석하지 않으므로 여러 번 눌러도 비용이 크게 늘지 않습니다.
 
-### 14-3. 매주 자동 수집 (pg_cron)
+### 14-3. 매주 자동 수집 (pg_cron) — 선택, 안 해도 됨
 
 **SQL Editor**에서 아래를 실행합니다. `<프로젝트ID>`와 `<anon 키>`는 3번에서 확인한 값으로 바꾸세요
 (anon 키는 원래 공개되는 키라 여기 적어도 괜찮습니다 — 서비스 키는 절대 넣지 마세요).

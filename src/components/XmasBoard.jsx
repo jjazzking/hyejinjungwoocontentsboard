@@ -120,7 +120,7 @@ export default function XmasBoard({ onAddToBoard }) {
           <p className="text-xs text-neutral-500">
             {lastRun
               ? `마지막 수집 ${new Date(lastRun.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · 후보 ${spots.filter((s) => !s.hidden).length}곳`
-              : '아직 수집한 적이 없어요 · 매주 목요일 밤 자동 수집'}
+              : "아직 수집한 적이 없어요 · '🔄 지금 수집'을 눌러 모아 보세요"}
           </p>
           <button
             type="button"
