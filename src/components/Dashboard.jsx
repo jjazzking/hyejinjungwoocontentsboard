@@ -16,6 +16,10 @@ import CompletedCalendar from './CompletedCalendar.jsx'
 import MapErrorBoundary from './MapErrorBoundary.jsx'
 // 지도 라이브러리(Leaflet)가 꽤 커서, 지도 보기를 켤 때만 내려받게 분리한다
 const ContentMap = lazy(() => import('./ContentMap.jsx'))
+// 🎄 시즌 탭도 열 때만 내려받는다
+const XmasBoard = lazy(() => import('./XmasBoard.jsx'))
+import { isSupabaseConfigured } from '../lib/supabaseClient.js'
+import { isXmasSeason } from '../utils/xmasSeason.js'
 import { useClipboardSuggestion } from '../hooks/useClipboardSuggestion.js'
 import { useSharedLink } from '../hooks/useSharedLink.js'
 import { useCategories } from '../hooks/useCategories.js'
@@ -29,6 +33,10 @@ const TABS = [
   // 카드 탭이 아니라 관리 화면 — 태그 만들기·색 고르기가 여기 모여 있다
   { key: 'CATEGORIES', label: '태그 관리', emoji: '🏷️' },
 ]
+
+// 🎄 크리스마스 탭: 수집 후보를 Supabase에 두므로 공유 DB가 있을 때만, 11/1~1/6에만 뜬다
+const XMAS_TAB = { key: 'XMAS', label: '크리스마스', emoji: '🎄' }
+const VISIBLE_TABS = isSupabaseConfigured && isXmasSeason() ? [...TABS.slice(0, 2), XMAS_TAB, TABS[2]] : TABS
 
 /** 'YYYY-MM-DD' → '7월 12일' */
 function formatDay(dateStr) {
@@ -129,6 +137,9 @@ export default function Dashboard({
     setDateFilter(null)
     setRegionFilter(null)
   }
+
+  // 카드 목록·지도가 뜨는 탭인지 (태그 관리·크리스마스 탭은 자기 화면만 띄운다)
+  const isCardTab = activeTab === 'PLANNING' || activeTab === 'COMPLETED'
 
   const hasFilter =
     Boolean(regionFilter) || (activeTab === 'PLANNING' ? Boolean(activeCategory) : Boolean(dateFilter))
@@ -300,8 +311,8 @@ export default function Dashboard({
 
       {/* 탭 */}
       <nav className="mb-8 flex justify-center">
-        <div className="inline-flex rounded-full bg-white p-1 shadow-sm ring-1 ring-neutral-900/5">
-          {TABS.map((tab) => {
+        <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-white p-1 shadow-sm ring-1 ring-neutral-900/5">
+          {VISIBLE_TABS.map((tab) => {
             const isActive = activeTab === tab.key
             return (
               <button
@@ -313,7 +324,7 @@ export default function Dashboard({
                   resetFilters()
                 }}
                 aria-pressed={isActive}
-                className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
+                className={`whitespace-nowrap rounded-full px-2 py-2 text-xs font-medium transition-colors sm:px-5 sm:text-sm ${
                   isActive
                     ? 'bg-rose-400 text-white shadow'
                     : 'text-neutral-500 hover:text-neutral-800'
@@ -321,9 +332,9 @@ export default function Dashboard({
               >
                 {tab.emoji} {tab.label}
                 <span
-                  className={`ml-1.5 text-xs ${isActive ? 'text-rose-100' : 'text-neutral-400'}`}
+                  className={`ml-1 text-xs sm:ml-1.5 ${isActive ? 'text-rose-100' : 'text-neutral-400'}`}
                 >
-                  {tab.key === 'CATEGORIES' ? categories.length : (countByStatus[tab.key] ?? 0)}
+                  {tab.key === 'XMAS' ? '' : tab.key === 'CATEGORIES' ? categories.length : (countByStatus[tab.key] ?? 0)}
                 </span>
               </button>
             )
@@ -340,7 +351,7 @@ export default function Dashboard({
 
       {/* 탭별 보기 필터: 할 것들 = 태그 칩, 한 것들 = 달력 (태그 관리 탭은 필터가 없다) */}
       {!loading &&
-        activeTab !== 'CATEGORIES' &&
+        isCardTab &&
         (activeTab === 'PLANNING' ? (
           <CategoryFilter
             items={tabItems}
@@ -370,6 +381,20 @@ export default function Dashboard({
         />
       )}
 
+      {/* 🎄 크리스마스 탭 — 수집한 후보를 주말별로 보고, 고른 곳만 카드로 담는다 */}
+      {!loading && activeTab === 'XMAS' && (
+        <Suspense
+          fallback={<p className="py-20 text-center text-sm text-neutral-400">🎄 불러오는 중…</p>}
+        >
+          <XmasBoard
+            onAddToBoard={(data) => {
+              addCategory('크리스마스')
+              return onAdd(data)
+            }}
+          />
+        </Suspense>
+      )}
+
       {/* 이동 모드 안내 */}
       {movingId && (
         <p className="mb-4 text-center text-sm text-rose-500">
@@ -378,13 +403,13 @@ export default function Dashboard({
       )}
 
       {/* 지역 검색: 지도 바로 위 한 줄. 고른 동네는 목록·지도에 그대로 필터로 걸린다 */}
-      {!loading && activeTab !== 'CATEGORIES' && (
+      {!loading && isCardTab && (
         <RegionSearch items={tabItems} selected={regionFilter} onSelect={setRegionFilter} />
       )}
 
       {/* 지도: 목록 위에 항상 떠 있고, 위의 필터가 핀에도 그대로 적용된다.
           외부 지도 스크립트가 터져도 보드는 살아 있어야 하므로 울타리를 두른다 */}
-      {!loading && activeTab !== 'CATEGORIES' && (
+      {!loading && isCardTab && (
         <MapErrorBoundary>
           <Suspense
             fallback={
@@ -406,7 +431,7 @@ export default function Dashboard({
       )}
 
       {/* 필터가 걸려 있을 때 지금 무엇을 보고 있는지 알려주는 한 줄 */}
-      {!loading && activeTab !== 'CATEGORIES' && hasFilter && filtered.length > 0 && (
+      {!loading && isCardTab && hasFilter && filtered.length > 0 && (
         <p className="mb-4 text-center text-sm text-neutral-500">
           {regionFilter
             ? `🧭 ${regionFilter.fullLabel} ${filtered.length}개`
@@ -417,7 +442,7 @@ export default function Dashboard({
       )}
 
       {/* 카드 매소너리: 카드 높이가 제각각이어도 컬럼 폭이 일정해 질서가 유지된다 */}
-      {activeTab === 'CATEGORIES' ? null : loading ? (
+      {!isCardTab ? null : loading ? (
         <div className="flex flex-col items-center gap-3 py-20 text-center">
           <span className="animate-pulse text-4xl">💌</span>
           <p className="text-sm text-neutral-400">보드를 불러오는 중…</p>
