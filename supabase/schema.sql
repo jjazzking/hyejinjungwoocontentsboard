@@ -232,3 +232,7 @@ create policy "anyone can read xmas_sources"
 drop policy if exists "anyone can read xmas_runs" on public.xmas_runs;
 create policy "anyone can read xmas_runs"
   on public.xmas_runs for select to anon, authenticated using (true);
+
+-- 🎄 좋아요 — 누가 눌렀는지 이름으로 담는다 ('혜진' / '정우'). 수집 함수는 이 컬럼을 건드리지 않는다
+alter table public.xmas_spots
+  add column if not exists liked_by text[] not null default '{}';

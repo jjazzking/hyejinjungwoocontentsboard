@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
 
-const SPOT_FIELDS =
+const BASE_FIELDS =
   'id, name, kind, summary, start_date, end_date, place, thumbnail_url, mention_count, hidden, added_content_id, first_seen_at, last_seen_at'
+// 좋아요 컬럼은 나중에 추가됐다 — SQL을 아직 안 돌렸으면 빼고 읽어서 탭은 살린다
+const SPOT_FIELDS = `${BASE_FIELDS}, liked_by`
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -31,14 +33,18 @@ export function useXmasSpots() {
   const [lastRun, setLastRun] = useState(null)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [error, setError] = useState(null)
+  // liked_by 컬럼이 있는지 (없으면 좋아요 버튼을 숨기고 이유를 알린다)
+  const [likesReady, setLikesReady] = useState(true)
   // 수집 진행: null | { message, log: string[], done?: boolean }
   const [collect, setCollect] = useState(null)
   const alive = useRef(true)
 
   const refetch = useCallback(async () => {
     if (!supabase) return
-    const [spotsRes, runRes] = await Promise.all([
-      supabase.from('xmas_spots').select(SPOT_FIELDS).order('mention_count', { ascending: false }),
+    const loadSpots = (fields) =>
+      supabase.from('xmas_spots').select(fields).order('mention_count', { ascending: false })
+    const [firstRes, runRes] = await Promise.all([
+      loadSpots(SPOT_FIELDS),
       supabase
         .from('xmas_runs')
         .select('step, status, stats, detail, created_at')
@@ -46,7 +52,11 @@ export function useXmasSpots() {
         .order('created_at', { ascending: false })
         .limit(1),
     ])
+    let spotsRes = firstRes
+    const missingLikes = Boolean(firstRes.error?.message?.includes('liked_by'))
+    if (missingLikes) spotsRes = await loadSpots(BASE_FIELDS)
     if (!alive.current) return
+    setLikesReady(!missingLikes)
     if (spotsRes.error) {
       setError(
         `후보를 못 불러왔어요 — ${spotsRes.error.message} (SUPABASE_SETUP.md의 크리스마스 SQL을 실행했는지 확인)`,
@@ -75,6 +85,14 @@ export function useXmasSpots() {
       .eq('id', id)
       .then(({ error: updateError }) => updateError && setError(`저장 실패 — ${updateError.message}`))
   }, [])
+
+  /** 좋아요 토글 — 다른 사람이 방금 누른 것을 덮어쓰지 않도록 DB의 최신값에 더하거나 뺀다 */
+  const toggleLike = useCallback(async (id, who) => {
+    const { data } = await supabase.from('xmas_spots').select('liked_by').eq('id', id).single()
+    const current = data?.liked_by ?? []
+    const next = current.includes(who) ? current.filter((name) => name !== who) : [...current, who]
+    patch(id, { liked_by: next })
+  }, [patch])
 
   /** 출처 글 목록 (펼칠 때만 불러온다) */
   const loadSources = useCallback(async (spotId) => {
@@ -145,5 +163,7 @@ export function useXmasSpots() {
     patch,
     loadSources,
     runCollect,
+    likesReady,
+    toggleLike,
   }
 }

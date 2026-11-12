@@ -18,8 +18,15 @@ const ContentMap = lazy(() => import('./ContentMap.jsx'))
 // 지도 핀 색은 종류별로 고정 — 보드의 태그 색과는 따로 논다
 const KIND_COLORS = buildCategoryColorMap(Object.values(XMAS_KINDS).map((k) => k.label))
 
+// 좋아요를 누르는 두 사람 — 로그인이 없는 보드라 이름 버튼을 따로 둔다
+const LIKERS = [
+  { name: '혜진', color: 'text-rose-500', ring: 'ring-rose-200', bg: 'bg-rose-50' },
+  { name: '정우', color: 'text-sky-600', ring: 'ring-sky-200', bg: 'bg-sky-50' },
+]
+
 const VIEWS = [
   { key: 'OPEN', label: '그 주말에 열림' },
+  { key: 'LIKED', label: '♥ 좋아요한 것' },
   { key: 'NEW', label: '이번 주 새로 뜸' },
   { key: 'ALL', label: '전체' },
   { key: 'HIDDEN', label: '숨긴 것' },
@@ -38,8 +45,19 @@ const chip = (active) =>
  * 후보는 카드가 아니다 — 수백 개가 쌓여도 보드를 어지럽히지 않게 별도 테이블에 둔다.
  */
 export default function XmasBoard({ onAddToBoard }) {
-  const { spots, lastRun, loading, error, collect, clearCollect, patch, loadSources, runCollect } =
-    useXmasSpots()
+  const {
+    spots,
+    lastRun,
+    loading,
+    error,
+    collect,
+    clearCollect,
+    patch,
+    loadSources,
+    runCollect,
+    likesReady,
+    toggleLike,
+  } = useXmasSpots()
   const weekends = useMemo(() => upcomingWeekends(), [])
   const [weekendKey, setWeekendKey] = useState(weekends[0]?.key ?? null)
   const [view, setView] = useState('OPEN')
@@ -56,13 +74,17 @@ export default function XmasBoard({ onAddToBoard }) {
       if (spot.hidden) return false
       if (capitalOnly && !isCapitalArea(spot)) return false
       if (kind && spot.kind !== kind) return false
+      if (view === 'LIKED') return (spot.liked_by ?? []).length > 0
       if (view === 'NEW') return now - new Date(spot.first_seen_at).getTime() < NEW_WITHIN_MS
       if (view === 'OPEN' && range) return openState(spot, range) !== 'closed'
       return true
     })
-    // 확실히 열린 곳 → 기간 미확인 순, 그 안에서는 많이 언급된 순
+    // 확실히 열린 곳 → 기간 미확인 순, 그 안에서는 좋아요 많은 순 → 많이 언급된 순
     const rank = (spot) => (range && openState(spot, range) === 'open' ? 0 : 1)
-    return list.sort((a, b) => rank(a) - rank(b) || b.mention_count - a.mention_count)
+    const likes = (spot) => (spot.liked_by ?? []).length
+    return list.sort(
+      (a, b) => rank(a) - rank(b) || likes(b) - likes(a) || b.mention_count - a.mention_count,
+    )
   }, [spots, view, kind, capitalOnly, range])
 
   // 지도는 보드 지도를 그대로 쓴다 — 후보를 카드 모양으로 바꿔서 넘긴다
@@ -150,6 +172,12 @@ export default function XmasBoard({ onAddToBoard }) {
           <p className="mt-1.5 whitespace-pre-line text-[11px] text-amber-600">⚠️ {lastRun.detail}</p>
         )}
       </div>
+
+      {!loading && !likesReady && (
+        <p className="mb-4 rounded-xl bg-amber-50 px-4 py-2.5 text-center text-xs text-amber-700 ring-1 ring-amber-200">
+          ♥ 좋아요를 쓰려면 SUPABASE_SETUP.md 14-4의 SQL 한 줄을 먼저 실행해 주세요.
+        </p>
+      )}
 
       {error && (
         <p className="mb-4 rounded-xl bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-700 ring-1 ring-amber-200">
@@ -240,6 +268,7 @@ export default function XmasBoard({ onAddToBoard }) {
               loadSources={loadSources}
               onAdd={() => addToBoard(spot)}
               onHide={() => patch(spot.id, { hidden: !spot.hidden })}
+              onLike={likesReady ? (who) => toggleLike(spot.id, who) : null}
             />
           ))}
         </ul>
@@ -248,7 +277,7 @@ export default function XmasBoard({ onAddToBoard }) {
   )
 }
 
-function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide }) {
+function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide, onLike }) {
   const [sources, setSources] = useState(null)
   const [imageOk, setImageOk] = useState(true)
   const meta = kindOf(spot.kind)
@@ -293,6 +322,30 @@ function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide }) {
           {spot.summary && <span className="mt-0.5 block text-xs text-neutral-600">{spot.summary}</span>}
         </span>
       </button>
+
+      {/* 좋아요 — 카드를 펼치지 않아도 바로 누를 수 있게 늘 보인다 */}
+      {onLike && (
+        <div className="mt-2 flex gap-1.5 pl-[68px]">
+          {LIKERS.map((liker) => {
+            const on = (spot.liked_by ?? []).includes(liker.name)
+            return (
+              <button
+                key={liker.name}
+                type="button"
+                aria-pressed={on}
+                onClick={() => onLike(liker.name)}
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 transition-colors ${
+                  on
+                    ? `${liker.bg} ${liker.color} ${liker.ring}`
+                    : 'bg-white text-neutral-400 ring-neutral-900/10 hover:text-neutral-600'
+                }`}
+              >
+                {on ? '♥' : '♡'} {liker.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {expanded && (
         <div className="mt-3 border-t border-neutral-100 pt-2.5 text-xs text-neutral-600">

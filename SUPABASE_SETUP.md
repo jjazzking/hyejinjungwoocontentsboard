@@ -600,3 +600,15 @@ select cron.schedule('xmas-ingest', '20,40 12 * * 4', $$
 
 크리스마스가 지나면 `select cron.unschedule(jobname) from cron.job where jobname like 'xmas-%';`
 한 줄로 멈출 수 있습니다. 모은 데이터는 그대로 남아서 내년에 다시 켜면 이어서 씁니다.
+
+### 14-4. ♥ 좋아요 켜기
+
+후보 카드에 '혜진 ♥ / 정우 ♥'를 누를 수 있게 하는 컬럼입니다. **SQL Editor**에서 한 번 실행하세요.
+(안 해도 탭은 그대로 동작하고, 좋아요 버튼 대신 이 안내가 뜹니다)
+
+```sql
+alter table public.xmas_spots
+  add column if not exists liked_by text[] not null default '{}';
+```
+
+수집 함수는 이 컬럼을 건드리지 않으므로 함수 재배포는 필요 없습니다.
