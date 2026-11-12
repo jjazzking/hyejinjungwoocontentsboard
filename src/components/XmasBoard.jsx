@@ -344,8 +344,6 @@ function SpotCard({ spot, expanded, onToggle, loadSources, onAdd, onHide, onLike
               likeCount >= 2 ? 'text-base text-rose-700' : 'text-sm text-neutral-900'
             }`}
           >
-            {likeCount === 1 && <span className="mr-1 text-rose-400">♥</span>}
-            {likeCount >= 2 && <span className="mr-1 text-rose-500">♥♥</span>}
             {spot.name}
           </span>
           <span className="block truncate text-xs text-neutral-500">
